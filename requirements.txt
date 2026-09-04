@@ -1,0 +1,4 @@
+# Panda3D is the only dependency. 1.10.x still supports the fixed-function
+# OpenGL 1.4+ pipeline and ships a software rasteriser, which is what lets
+# this run on very old machines.
+panda3d>=1.10,<2
