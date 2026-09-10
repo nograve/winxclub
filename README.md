@@ -99,6 +99,42 @@ Army of Decay, which they turn on the realms one at a time.
 ![Pixie Village](screenshots/21-pixie-village.png)
 ![The Battle of Alfea](screenshots/23-battle-of-alfea.png)
 
+## Exploring, and puzzles
+
+Chapters are not just fights. Every level carries an objective checklist, and
+the portal home stays shut until the required ones are done — so clearing the
+enemies is rarely enough on its own.
+
+![Objectives and a rune](screenshots/24-puzzle-runes.png)
+
+**Inscriptions.** Scattered tablets carry the realm's lore and, usually, the
+hint you need for its puzzle. Press `E` to read one.
+
+![Reading an inscription](screenshots/26-puzzle-reading.png)
+
+**Hidden caches.** Every level hides two or three, off the main route and
+worth score, health or a full magic meter. Finding them is always optional.
+
+**Puzzles**, one built around each level's own fiction:
+
+| Level | Puzzle |
+| ----- | ------ |
+| Alfea | Wake four barrier stones by striking each with a magic bolt |
+| Black Mud Swamp | Light the marsh lights out in the bog, then work two levers to extend a bridge to a stranded islet |
+| Cloud Tower | Sound four chimes in the order a page of the Book of Fate gives you — a wrong note resets the whole sequence, and the hall gate stays shut |
+| Lake Roccaluce | Wake the four lights that stood over Domino, scattered across ice shelves you have to fly to |
+| Red Fountain | The vault does not open to magic: push two counterweights onto the floor plates |
+| Pixie Village | Wake five chimes in the order of the pixies' rhyme |
+| Home realms | Three realm lights, an inscription of your own, and caches |
+
+![The chime sequence](screenshots/27-puzzle-sequence.png)
+![The vault counterweights](screenshots/28-puzzle-blocks.png)
+
+Gates, bridges and pushable blocks are real obstacles, not scenery: each owns
+an entry in the level's collision list, which is the same list the player, the
+enemies and every projectile test against — so a gate that opens is genuinely
+open for all of them at once.
+
 ## The fairies, and their realms
 
 Six playable fairies. Each has her own realm, her own two chapters, her own
@@ -176,7 +212,12 @@ Windows, then the software renderer, rather than failing to start.
 - **Static level geometry is flattened** into a handful of nodes at load.
 - **Analytic collision.** Movement, projectiles and pickups resolve against
   axis-aligned boxes directly rather than running Panda3D's collision
-  traverser every frame.
+  traverser every frame. Puzzle objects that move — gates, bridges, blocks —
+  own entries in that same list.
+- **Placements are snapped to the geometry** at load, not hand-authored: every
+  collectible and puzzle object is settled onto the surface actually beneath
+  it and nudged clear of posts, so nothing floats or ends up inside a wall
+  when a builder changes.
 - **Procedural audio.** Sound effects and music are synthesised to small mono
   22 kHz WAVs on first run and cached.
 
@@ -194,7 +235,8 @@ winx3d/
   geometry.py         Procedural mesh builder (boxes, spheres, cylinders, ...)
   lore.py             Canon: characters, realms, the Codex, the S1 script
   characters.py       The six fairies, their models and the animator
-  world.py            Level geometry, collision, realms and the campaign
+  world.py            Level geometry, collision, realms, puzzles, campaign
+  puzzles.py          Interactables: runes, chimes, gates, blocks, tablets
   player.py           Movement, flight, combat, third-person camera
   enemies.py          Ghoul / Wisp / Troll / Decay / Knut / Trix AI
   effects.py          Projectiles, particles, pickups
@@ -217,10 +259,12 @@ The whole game can be played through with no display attached, which is how it
 is tested:
 
 ```sh
-python3 tests/smoke.py      # 103 checks: lore integrity, all six campaigns
-                            # and every home realm, menus, unlocks, the story
-                            # system, movement, collision, flight, combat,
-                            # pickups, death, portals, the Trix, teardown
+python3 tests/smoke.py      # 140 checks: lore integrity, all six campaigns
+                            # and every home realm, placement validation for
+                            # every pickup and puzzle object, each puzzle type
+                            # end to end, menus, unlocks, the story system,
+                            # movement, collision, flight, combat, death,
+                            # portals, the Trix, teardown
 python3 tools/capture.py    # regenerate screenshots/
 ```
 

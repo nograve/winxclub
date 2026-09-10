@@ -81,9 +81,20 @@ class HUD:
         self.lives = text(self.root, "", right, 0.76, 0.042,
                           (1.0, 0.60, 0.70, 1), TextNode.ARight)
 
-        # --- objective ----------------------------------------------------
-        self.objective = text(self.root, "", 0, -0.92, 0.040,
-                              (1, 1, 1, 0.92), TextNode.ACenter)
+        # --- objectives ---------------------------------------------------
+        # A short checklist rather than one line: these levels ask for
+        # several things at once, and some of them are optional.
+        self.objective_rows = []
+        for i in range(5):
+            self.objective_rows.append((
+                text(self.root, "", left, -0.62 - i * 0.062, 0.038,
+                     (1, 1, 1, 0.92), TextNode.ALeft),
+                text(self.root, "", left - 0.030, -0.62 - i * 0.062, 0.038,
+                     (1, 1, 1, 0.92), TextNode.ACenter)))
+
+        # --- interaction prompt -------------------------------------------
+        self.prompt = text(self.root, "", 0, -0.40, 0.050,
+                           (1.0, 0.92, 0.55, 1), TextNode.ACenter)
 
         # --- boss bar -----------------------------------------------------
         self.boss_root = self.root.attachNewNode("boss")
@@ -122,8 +133,28 @@ class HUD:
         """Each chapter collects something different - pixies, pages, shards."""
         self.gem_label = name.upper() + "S"
 
-    def set_objective(self, msg: str) -> None:
-        self.objective.setText(msg)
+    def set_prompt(self, msg: str) -> None:
+        self.prompt.setText(msg)
+
+    def set_objectives(self, rows) -> None:
+        """rows: (text, progress, done, required) - a live checklist."""
+        for i, (label, mark) in enumerate(self.objective_rows):
+            if i >= len(rows):
+                label.setText("")
+                mark.setText("")
+                continue
+            msg, progress, done, required = rows[i]
+            mark.setText("x" if done else "-")
+            mark.setFg((0.55, 0.95, 0.60, 1) if done
+                       else (1, 1, 1, 0.55) if required
+                       else (0.85, 0.80, 0.55, 0.75))
+            line = msg if not progress else "%s   (%s)" % (msg, progress)
+            if not required:
+                line += "   - optional"
+            label.setText(line)
+            label.setFg((0.70, 0.95, 0.72, 0.85) if done
+                        else (1, 1, 1, 0.94) if required
+                        else (0.90, 0.86, 0.66, 0.85))
 
     def update(self, dt: float, player, boss=None) -> None:
         if self.banner_timer > 0.0:

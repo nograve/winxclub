@@ -91,6 +91,45 @@ def main():
             shot("%02d-%s-%s" % (4 + i * 2 + (1 if tag == "siege" else 0),
                                  key, tag))
 
+    # Puzzles and exploration.
+    game.start_run(characters.BY_KEY["bloom"])
+    play()
+    game.load_level(1)                       # Alfea: the barrier runes
+    play()
+    p = game.player
+    p.root.setPos(-20, -28, 1.0)
+    p.cam_yaw, p.cam_pitch = 20.0, -6.0
+    step(30)
+    shot("24-puzzle-runes")
+
+    tab = next(i for i in game.interactables
+               if i.__class__.__name__ == "Tablet")
+    p.root.setPos(tab.center().x, tab.center().y - 4.0, 0.0)
+    p.cam_yaw, p.cam_pitch = 0.0, -4.0
+    step(20)
+    shot("25-puzzle-tablet-prompt")
+    game.do_interact()
+    step(4)
+    shot("26-puzzle-reading")
+    game.on_confirm()
+    step(4)
+
+    game.load_level(3)                       # Cloud Tower: the chime sequence
+    play()
+    p = game.player
+    p.root.setPos(0, -22, 2.0)
+    p.cam_yaw, p.cam_pitch = 0.0, -6.0
+    step(30)
+    shot("27-puzzle-sequence")
+
+    game.load_level(5)                       # Red Fountain: counterweights
+    play()
+    p = game.player
+    p.root.setPos(0, -22, 1.0)
+    p.cam_yaw, p.cam_pitch = 0.0, -8.0
+    step(30)
+    shot("28-puzzle-blocks")
+
     # The shared chapters.
     game.start_run(characters.BY_KEY["bloom"])
     play()

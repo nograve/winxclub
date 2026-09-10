@@ -11,7 +11,7 @@ from panda3d.core import (AmbientLight, CardMaker, ClockObject,
                           NodePath, TextNode, TransparencyAttrib, Vec3, Vec4,
                           WindowProperties)
 
-from . import characters, config as C, enemies as E, lore
+from . import characters, config as C, enemies as E, lore, puzzles
 from .audio import Audio
 from .effects import EffectSystem, Pickup
 from .geometry import MeshBuilder, shade
@@ -112,6 +112,11 @@ class Game(ShowBase):
         self.portal = None
         self.portal_active = False
         self.bosses = []
+        self.interactables = []
+        self.groups = {}
+        self.group_titles = {}
+        self.puzzle = puzzles.PuzzleState()
+        self.reading = None
         self.chapter = None
         self.story_lines = []
         self.story_index = 0
@@ -164,18 +169,18 @@ class Game(ShowBase):
     # and dispatched from there: Panda3D's ``accept`` replaces any previous
     # handler for an event, so binding a key twice would silently drop the
     # first meaning.
+    # Movement is WASD and the camera is the arrow keys, which leaves E free
+    # for the interact verb the puzzles are built on.
     HELD = {
-        "w": "forward", "arrow_up": "forward",
-        "s": "back", "arrow_down": "back",
-        "a": "left", "arrow_left": "left",
-        "d": "right", "arrow_right": "right",
+        "w": "forward", "s": "back", "a": "left", "d": "right",
         "shift": "run", "lshift": "run", "rshift": "run",
         "space": "jump",
         "j": "attack", "mouse1": "attack", "control": "attack",
         "lcontrol": "attack", "rcontrol": "attack",
         "k": "special", "mouse3": "special",
-        "q": "cam_left", "e": "cam_right",
-        "r": "cam_up", "v": "cam_down",
+        "arrow_left": "cam_left", "q": "cam_left",
+        "arrow_right": "cam_right",
+        "arrow_up": "cam_up", "arrow_down": "cam_down",
     }
     # Menu navigation, applied only while a menu screen is up.
     MENU_VERTICAL = {"w": -1, "arrow_up": -1, "s": 1, "arrow_down": 1}
@@ -183,7 +188,7 @@ class Game(ShowBase):
 
     def _bind_keys(self) -> None:
         keys = set(self.HELD) | set(self.MENU_VERTICAL) | \
-            set(self.MENU_HORIZONTAL) | {"f"}
+            set(self.MENU_HORIZONTAL) | {"f", "e"}
         for key in keys:
             self.accept(key, self._on_key_down, [key])
             self.accept(key + "-up", self._on_key_up, [key])
@@ -196,7 +201,8 @@ class Game(ShowBase):
 
     def _on_key_down(self, key: str) -> None:
         in_menu = self.state in ("title", "options", "select", "help",
-                                 "results", "gameover", "paused", "story")
+                                 "results", "gameover", "paused", "story",
+                                 "reading")
         if in_menu:
             if key in self.MENU_VERTICAL:
                 self._menu_move(self.MENU_VERTICAL[key])
@@ -212,6 +218,8 @@ class Game(ShowBase):
             self.keys["jump_pressed"] = True
         elif key == "f":
             self.keys["transform_pressed"] = True
+        elif key == "e":
+            self.do_interact()
 
     def _on_key_up(self, key: str) -> None:
         action = self.HELD.get(key)
@@ -304,8 +312,9 @@ class Game(ShowBase):
         text(self.screen, "HOW TO PLAY", 0, 0.72, 0.085, TITLE_COLOR,
              TextNode.ACenter)
         lines = [
-            ("W A S D / Arrows", "Move (relative to the camera)"),
-            ("Mouse  or  Q / E", "Swing the camera around"),
+            ("W A S D", "Move (relative to the camera)"),
+            ("Mouse  or  Arrow keys", "Swing the camera around"),
+            ("E", "Read, pull, open - anything you can walk up to"),
             ("Shift", "Run"),
             ("Space", "Jump  -  hold in the air to fly"),
             ("J  or  Left mouse", "Magic bolt"),
@@ -425,6 +434,33 @@ class Game(ShowBase):
         locked until the first-year campaign has been cleared once."""
         return f.season <= 1 or \
             self.profile.get("levels_cleared", 0) >= CAMPAIGN_LENGTH
+
+    def show_reading(self, title: str, body: str) -> None:
+        """Full-screen panel for an inscription the player just read."""
+        self.reading = (title, body)
+        self.state = "reading"
+        self._release_all()
+        self.hud.set_visible(False)
+        self._apply_mouse_mode()
+        self.clear_screen()
+        a = self.getAspectRatio()
+        card(self.screen, -a, -1, a * 2, 2, (0.06, 0.05, 0.12, 0.88), "dim")
+        card(self.screen, -a + 0.20, -0.40, a * 2 - 0.40, 0.84,
+             (0.13, 0.11, 0.20, 0.96), "panel")
+        text(self.screen, title.upper(), 0, 0.32, 0.056,
+             (1.0, 0.86, 0.45, 1), TextNode.ACenter)
+        text(self.screen, body, 0, 0.20, 0.046, (1, 1, 1, 0.95),
+             TextNode.ACenter, wordwrap=(a * 2 - 0.60) / 0.046)
+        text(self.screen, "Enter or Esc to stop reading", 0, -0.33, 0.038,
+             (1, 1, 1, 0.7), TextNode.ACenter)
+        self.audio.play("menu")
+
+    def close_reading(self) -> None:
+        self.reading = None
+        self.clear_screen()
+        self.state = "playing"
+        self.hud.set_visible(True)
+        self._apply_mouse_mode()
 
     def show_select(self) -> None:
         self.state = "select"
@@ -547,7 +583,9 @@ class Game(ShowBase):
             self._refresh_options()
 
     def on_confirm(self) -> None:
-        if self.state == "story":
+        if self.state == "reading":
+            self.close_reading()
+        elif self.state == "story":
             self._advance_story()
         elif self.state == "title":
             choice = self.menu_items[self.menu_index]
@@ -583,7 +621,9 @@ class Game(ShowBase):
             self.toggle_pause()
 
     def on_escape(self) -> None:
-        if self.state == "story":
+        if self.state == "reading":
+            self.close_reading()
+        elif self.state == "story":
             # Skip the rest of this chapter's dialogue.
             self.story_index = len(self.story_lines) - 1
             self._advance_story()
@@ -683,6 +723,20 @@ class Game(ShowBase):
         self.bosses = [e for e in self.enemy_list
                        if getattr(e, "is_boss", False)]
 
+        # Interactive objects, and the group index the puzzle logic walks.
+        self.puzzle = puzzles.PuzzleState()
+        self.interactables = []
+        self.groups = {}
+        self.group_titles = {}
+        for spec in level.puzzles:
+            obj = puzzles.spawn(spec, self.world_root, self)
+            self.interactables.append(obj)
+            if spec.group:
+                self.groups.setdefault(spec.group, []).append(obj)
+        for o in level.objectives:
+            if o.kind == "flag":
+                self.group_titles[o.target] = o.text
+
         self.pickups = [Pickup(self.world_root, Vec3(p), "gem")
                         for p in level.gems]
         self.pickups += [Pickup(self.world_root, Vec3(p), "heart")
@@ -720,10 +774,10 @@ class Game(ShowBase):
         chapter = self.chapter
         if chapter is not None:
             self.hud.show_banner(level.name.upper(), chapter.objective, 3.6)
-            self.hud.set_objective(chapter.objective)
+            self.hud.set_objectives([(chapter.objective, "", False, True)])
         else:
             self.hud.show_banner(level.name.upper(), level.subtitle, 3.4)
-            self.hud.set_objective(level.hint)
+            self.hud.set_objectives([(level.hint, "", False, True)])
         self.hud.set_gem_label(level.gem_name)
         self.set_playing_visuals(True)
         self._apply_mouse_mode()
@@ -738,6 +792,11 @@ class Game(ShowBase):
             if not p.taken:
                 p.np.removeNode()
         self.pickups = []
+        for it in self.interactables:
+            it.destroy()
+        self.interactables = []
+        self.groups = {}
+        self.puzzle = puzzles.PuzzleState()
         if self.portal is not None:
             self.portal.removeNode()
             self.portal = None
@@ -943,7 +1002,12 @@ class Game(ShowBase):
         for e in self.enemy_list:
             if e.alive:
                 e.update(dt, player, self.effects)
-        self.effects.update(dt, player, self.enemy_list)
+        self.effects.update(dt, player, self.enemy_list, self.interactables)
+        # Apply any puzzle objects a bolt struck, now that the projectile
+        # pass has finished iterating.
+        for it in self.effects.pending_shots:
+            it.on_shot(self)
+        self.effects.pending_shots.clear()
 
         for was_alive, e in zip(before, self.enemy_list):
             if was_alive and not e.alive:
@@ -966,9 +1030,89 @@ class Game(ShowBase):
                 self.enemy_list.append(
                     E.spawn(kind, self.world_root, pos, self.solids))
 
+        for it in self.interactables:
+            it.update(dt, self)
         self._update_pickups(dt, player)
         self._update_portal(dt, player)
+        self._update_prompt()
         self.hud.update(dt, player, self.active_boss())
+
+    # ------------------------------------------------------------------
+    # dynamic collision
+    # ------------------------------------------------------------------
+    # Gates, bridges and push-blocks own entries in the level's solid list.
+    # That list is what the player, the enemies and the projectiles all test
+    # against, so mutating it moves the obstacle for everything at once.
+    def add_solid(self, center: Vec3, half: Vec3) -> int:
+        self.solids.append((Vec3(center), Vec3(half)))
+        return len(self.solids) - 1
+
+    def move_solid(self, index: int, center: Vec3) -> None:
+        self.solids[index] = (Vec3(center), self.solids[index][1])
+
+    def remove_solid(self, index: int) -> None:
+        # Emptied rather than deleted: the indices other objects hold must
+        # stay valid, so the slot becomes a zero-sized box far below the map.
+        self.solids[index] = (Vec3(0, 0, -10000.0), Vec3(0, 0, 0))
+
+    def solid_at(self, center: Vec3, half: Vec3, ignore: int = -1) -> bool:
+        """Would a box of this size at this place overlap anything solid?"""
+        for i, (c, h) in enumerate(self.solids):
+            if i == ignore:
+                continue
+            if (abs(center.x - c.x) < half.x + h.x - 0.05 and
+                    abs(center.y - c.y) < half.y + h.y - 0.05 and
+                    abs(center.z - c.z) < half.z + h.z - 0.05):
+                return True
+        return False
+
+    # ------------------------------------------------------------------
+    # puzzles
+    # ------------------------------------------------------------------
+    def on_puzzle_progress(self, group: str) -> None:
+        """Re-evaluate a group after one of its members changed state."""
+        if not group:
+            return
+        members = self.groups.get(group, [])
+        drivers = [m for m in members if not isinstance(m, puzzles.OPENERS)]
+        openers = [m for m in members if isinstance(m, puzzles.OPENERS)]
+        if drivers and all(m.solved for m in drivers):
+            if not self.puzzle.has(group):
+                self.puzzle.set(group)
+                for o in openers:
+                    o.open(self)
+                self.hud.show_banner("", self.group_titles.get(
+                    group, "Something opens nearby"), 2.4)
+        elif self.puzzle.has(group):
+            # A plate released: the group is no longer satisfied.
+            self.puzzle.flags.discard(group)
+
+    def nearest_interactable(self):
+        """The usable object closest to the player, if any is in reach."""
+        if self.player is None or not self.player.alive:
+            return None
+        p = self.player.center()
+        best, best_d = None, 1e9
+        for it in self.interactables:
+            if it.use_radius <= 0.0 or not it.can_use(self):
+                continue
+            d = (it.center() - p).length()
+            if d < it.use_radius and d < best_d:
+                best, best_d = it, d
+        return best
+
+    def do_interact(self) -> None:
+        it = self.nearest_interactable()
+        if it is not None:
+            it.use(self)
+
+    @property
+    def max_health(self) -> float:
+        return C.MAX_HEALTH
+
+    @property
+    def max_magic(self) -> float:
+        return C.MAX_MAGIC
 
     def active_boss(self):
         """The boss the HUD bar tracks - the first still standing."""
@@ -997,10 +1141,48 @@ class Game(ShowBase):
                 self.effects.burst(p.np.getPos(), p.color, 12, 6.0, 0.32)
                 p.collect()
 
+    def objective_done(self, o) -> bool:
+        if o.kind == "clear":
+            return not any(e.alive for e in self.enemy_list)
+        if o.kind == "collect":
+            return self.player.gems >= o.count
+        if o.kind == "secrets":
+            return (self.puzzle.secrets_total > 0 and
+                    self.puzzle.secrets_found >= self.puzzle.secrets_total)
+        return self.puzzle.has(o.target)
+
+    def objective_progress(self, o) -> str:
+        if o.kind == "clear":
+            n = sum(1 for e in self.enemy_list if e.alive)
+            return "" if n == 0 else "%d left" % n
+        if o.kind == "collect":
+            return "%d / %d" % (min(self.player.gems, o.count), o.count)
+        if o.kind == "secrets":
+            return "%d / %d" % (self.puzzle.secrets_found,
+                                self.puzzle.secrets_total)
+        if o.target in self.groups:
+            members = [m for m in self.groups[o.target]
+                       if not isinstance(m, puzzles.OPENERS)]
+            done = sum(1 for m in members if m.solved)
+            if len(members) > 1:
+                return "%d / %d" % (done, len(members))
+        return ""
+
+    def _update_prompt(self) -> None:
+        it = self.nearest_interactable()
+        self.hud.set_prompt("[E]  " + it.prompt_text(self) if it else "")
+
     def _update_portal(self, dt: float, player) -> None:
-        remaining = sum(1 for e in self.enemy_list if e.alive)
-        need_gems = max(0, self.level.gem_goal - player.gems)
-        ready = remaining == 0 and need_gems == 0
+        objectives = self.level.objectives
+        if objectives:
+            ready = all(self.objective_done(o) for o in objectives
+                        if o.required)
+            remaining = sum(1 for e in self.enemy_list if e.alive)
+            need_gems = max(0, self.level.gem_goal - player.gems)
+        else:
+            remaining = sum(1 for e in self.enemy_list if e.alive)
+            need_gems = max(0, self.level.gem_goal - player.gems)
+            ready = remaining == 0 and need_gems == 0
 
         if ready and not self.portal_active:
             self.portal_active = True
@@ -1022,14 +1204,21 @@ class Game(ShowBase):
                 self.complete_level()
                 return
 
-        noun = self.level.gem_name
-        if remaining:
-            what = "Enemies remaining  %d" % remaining
-            if need_gems:
-                what += "     %ss needed  %d" % (noun.title(), need_gems)
-        elif need_gems:
-            what = "Find %d more %s%s" % (need_gems, noun,
-                                          "" if need_gems == 1 else "s")
+        if self.level.objectives:
+            self.hud.set_objectives(
+                [(o.text, self.objective_progress(o),
+                  self.objective_done(o), o.required)
+                 for o in self.level.objectives] +
+                ([("Head for the portal", "", False, True)] if ready else []))
         else:
-            what = "Head for the portal!"
-        self.hud.set_objective(what)
+            noun = self.level.gem_name
+            if remaining:
+                what = "Enemies remaining  %d" % remaining
+                if need_gems:
+                    what += "     %ss needed  %d" % (noun.title(), need_gems)
+            elif need_gems:
+                what = "Find %d more %s%s" % (need_gems, noun,
+                                              "" if need_gems == 1 else "s")
+            else:
+                what = "Head for the portal!"
+            self.hud.set_objectives([(what, "", False, True)])

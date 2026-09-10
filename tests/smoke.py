@@ -30,7 +30,8 @@ from winx3d import config as C                       # noqa: E402
 from winx3d import characters, lore                  # noqa: E402
 from winx3d.app import Game                          # noqa: E402
 from winx3d.world import (CAMPAIGN_LENGTH, HOME_LEVELS,     # noqa: E402
-                          campaign_for, WorldBuilder)
+                          SHARED_LEVELS, campaign_for, WorldBuilder)
+from winx3d.enemies import ground_height                    # noqa: E402
 
 DT = 1.0 / 60.0
 FAILURES = []
@@ -66,6 +67,23 @@ class Harness:
 
     def key(self, name, down=True):
         (self.game._on_key_down if down else self.game._on_key_up)(name)
+
+    def solve_puzzles(self, required_only=True):
+        """Work every puzzle in the current level the way a player would."""
+        g = self.game
+        from winx3d import puzzles as P
+        for name, members in list(g.groups.items()):
+            drivers = [m for m in members if not isinstance(m, P.OPENERS)]
+            if drivers and isinstance(drivers[0], P.Pedestal):
+                for m in sorted(drivers, key=lambda x: x.spec.order):
+                    m.use(g)
+            elif drivers and isinstance(drivers[0], P.Plate):
+                continue          # plates need blocks pushed onto them
+            else:
+                for m in drivers:
+                    if m.can_use(g):
+                        m.use(g)
+        self.step(2)
 
     def skip_story(self, limit=60):
         """Click through a chapter's dialogue until play resumes."""
@@ -127,6 +145,55 @@ def main():
         check("%-7s realm geometry (calm + besieged)" % key, good)
     check("home realms are visually distinct",
           len({id(HOME_LEVELS[f.key][0].build) for f in characters.ROSTER}) == 6)
+
+    print("\n[1d] Puzzle and pickup placement")
+    all_levels = list(SHARED_LEVELS.values())
+    for _c, _s in HOME_LEVELS.values():
+        all_levels += [_c, _s]
+    misplaced = []
+    for lv in all_levels:
+        wb = WorldBuilder()
+        lv.build(wb)
+        boxes = wb.boxes
+        spots = [("gem", g) for g in lv.gems] + \
+                [("heart", p) for p in lv.hearts] + \
+                [(s.kind, s.pos) for s in lv.puzzles if s.kind != "bridge"]
+        for kind, p in spots:
+            buried = any(abs(p.x - c.x) < h.x - 0.05
+                         and abs(p.y - c.y) < h.y - 0.05
+                         and c.z - h.z + 0.05 < p.z < c.z + h.z - 0.05
+                         for c, h in boxes)
+            gz = ground_height(boxes, p.x, p.y, p.z + 1.5)
+            adrift = abs(gz - p.z) > 1.6
+            if buried or adrift:
+                misplaced.append("%s/%s at %s" % (lv.key, kind, p))
+    check("nothing is buried in a wall or floating", not misplaced,
+          "%d bad: %s" % (len(misplaced), misplaced[:3]))
+
+    levels_with_puzzles = [lv for lv in all_levels if lv.puzzles]
+    check("every level has interactive content",
+          len(levels_with_puzzles) == len(all_levels),
+          "%d of %d" % (len(levels_with_puzzles), len(all_levels)))
+    check("every level has an objective list",
+          all(lv.objectives for lv in all_levels))
+    kinds = {s.kind for lv in all_levels for s in lv.puzzles}
+    check("all puzzle kinds are used somewhere",
+          kinds >= {"tablet", "cache", "rune", "pedestal", "lever",
+                    "bridge", "gate", "block", "plate"}, str(sorted(kinds)))
+    check("every tablet has text",
+          all(s.text and s.title for lv in all_levels
+              for s in lv.puzzles if s.kind == "tablet"))
+    # A group that opens a gate or bridge must have something driving it.
+    for lv in all_levels:
+        groups = {}
+        for s in lv.puzzles:
+            if s.group:
+                groups.setdefault(s.group, []).append(s.kind)
+        for name, members in groups.items():
+            openers = [k for k in members if k in ("gate", "bridge")]
+            drivers = [k for k in members if k not in ("gate", "bridge")]
+            if openers and not drivers:
+                check("%s/%s has a driver" % (lv.key, name), False)
 
     print("\n[2] Title and menus")
     h.step(3)
@@ -287,13 +354,63 @@ def main():
     check("a life is spent", p.lives == lives - 1)
     check("player respawns alive", p.alive)
 
-    print("\n[9] Objective, portal and the outro")
+    print("\n[9] Puzzles, objectives and the portal")
+    check("chapter 1 has interactive objects", len(g.interactables) > 0,
+          "%d" % len(g.interactables))
+    tablet = next(it for it in g.interactables
+                  if it.__class__.__name__ == "Tablet")
+    p.root.setPos(tablet.center() + Vec3(0, -2.0, -1.0))
+    h.step(2)
+    check("standing near a tablet offers a prompt",
+          g.nearest_interactable() is tablet)
+    g.do_interact()
+    check("reading opens the inscription panel", g.state == "reading")
+    check("the inscription has text", bool(g.reading[1]))
+    g.on_confirm()
+    check("closing it returns to play", g.state == "playing")
+    check("the tablet is marked read", g.puzzle.tablets_read == 1)
+
+    rune = next(it for it in g.interactables
+                if it.__class__.__name__ == "Rune")
+    check("runes can be shot", rune.shootable)
+    p.magic = C.MAX_MAGIC
+    p.invuln = 0.0
+    p.root.setPos(rune.center() + Vec3(0, -11.0, -1.0))
+    aim = rune.center() - p.center()
+    p.cam_yaw = math.degrees(math.atan2(-aim.x, aim.y))
+    p.cam_pitch = math.degrees(math.asin(max(-1, min(1, aim.z / aim.length()))))
+    h.step(2)
+    h.step(4, keys={"attack": True})
+    h.step(1, keys={"attack": False})
+    h.step(40)
+    check("a magic bolt lights a rune", rune.solved)
+
+    caches = [it for it in g.interactables
+              if it.__class__.__name__ == "Cache"]
+    check("the level hides caches", len(caches) >= 2)
+    before = p.score
+    p.root.setPos(caches[0].center() + Vec3(0, -2.0, -1.0))
+    h.step(2)
+    g.do_interact()
+    check("a cache can be opened", caches[0].solved)
+    check("finding one is rewarded", p.score > before)
+    check("secrets are counted", g.puzzle.secrets_found == 1)
+
+    flags = [o for o in g.level.objectives if o.kind == "flag"]
+    check("chapter 1 has a puzzle objective", len(flags) >= 1)
+    check("it starts incomplete", not g.objective_done(flags[0]))
     for e in g.enemy_list:
         if e.alive:
             e.take_damage(999.0, g.effects)
+    h.step(3)
+    check("the portal stays shut while a puzzle is unsolved",
+          not g.portal_active)
+    h.solve_puzzles()
+    check("solving the group completes the objective",
+          g.objective_done(flags[0]))
     p.gems = max(p.gems, g.level.gem_goal)
     h.step(3)
-    check("portal opens once the chapter is clear", g.portal_active)
+    check("the portal opens once everything is done", g.portal_active)
     score = p.score
     check("defeating enemies scored points", score > 0, "score=%d" % score)
     p.root.setPos(g.portal.getPos() + Vec3(0, 0, 1.5))
@@ -304,6 +421,83 @@ def main():
     h.skip_story()
     check("results follow the outro", g.state == "results")
     check("progress was recorded", g.profile["levels_cleared"] >= 1)
+
+    print("\n[9b] The harder puzzle types")
+    from winx3d import puzzles as P
+
+    # --- Cloud Tower: a sequence that punishes the wrong order -------------
+    g.load_level(lore.CAMPAIGN_TEMPLATE.index("cloudtower"))
+    h.skip_story()
+    h.step(3)
+    peds = sorted([it for it in g.interactables if isinstance(it, P.Pedestal)],
+                  key=lambda x: x.spec.order)
+    gate = next(it for it in g.interactables if isinstance(it, P.Gate))
+    check("Cloud Tower has a four-note sequence", len(peds) == 4)
+    check("its gate starts closed and solid",
+          not gate.solved and g.solids[gate.box_index][1].z > 1.0)
+    peds[0].use(g)
+    peds[2].use(g)                      # out of order
+    h.step(2)
+    check("a wrong note resets the sequence",
+          g.puzzle.count("verse") == 0 and not any(x.solved for x in peds))
+    for x in peds:
+        x.use(g)
+    h.step(2)
+    check("the right order solves it", g.puzzle.has("verse"))
+    check("solving it opens the gate", gate.solved)
+    h.step(90)
+    check("the opened gate stops blocking",
+          g.solids[gate.box_index][0].z < -100.0)
+
+    # --- Red Fountain: push a counterweight onto a plate -------------------
+    g.load_level(lore.CAMPAIGN_TEMPLATE.index("redfountain"))
+    h.skip_story()
+    h.step(3)
+    blocks = [it for it in g.interactables if isinstance(it, P.PushBlock)]
+    plates = [it for it in g.interactables if isinstance(it, P.Plate)]
+    check("Red Fountain has counterweights and plates",
+          len(blocks) == 2 and len(plates) == 2)
+    blk, plate = blocks[0], plates[0]
+    start_y = blk.root.getY()
+    p = g.player
+    p.root.setPos(blk.root.getX(), blk.root.getY() - 4.2, blk.root.getZ())
+    p.vel = Vec3(0, 0, 0)
+    p.cam_yaw = 0.0
+    h.step(90, keys={"forward": True})
+    h.step(1, keys={"forward": False})
+    check("walking into a block pushes it", blk.root.getY() > start_y + 1.0,
+          "%.1f -> %.1f" % (start_y, blk.root.getY()))
+    check("the block's collision moves with it",
+          abs(g.solids[blk.box_index][0].y - blk.root.getY()) < 0.1)
+    # Drop it straight onto the plate and confirm the plate responds.
+    blk.root.setPos(plate.root.getX(), plate.root.getY(), plate.root.getZ())
+    g.move_solid(blk.box_index, blk.root.getPos() + Vec3(0, 0, blk.half.z))
+    p.root.setPos(plate.root.getX(), plate.root.getY() - 20.0, 1.0)
+    h.step(4)
+    check("a block on a plate presses it", plate.pressed)
+
+    # --- Swamp: two levers extend the bridge -------------------------------
+    g.load_level(lore.CAMPAIGN_TEMPLATE.index("swamp"))
+    h.skip_story()
+    h.step(3)
+    levers = [it for it in g.interactables if isinstance(it, P.Lever)]
+    bridge = next(it for it in g.interactables if isinstance(it, P.Bridge))
+    check("the swamp has two levers and a bridge", len(levers) == 2)
+    stowed = bridge.root.getPos()
+    levers[0].use(g)
+    h.step(10)
+    check("one lever is not enough", not bridge.extending)
+    levers[1].use(g)
+    h.step(2)
+    check("both levers start the bridge", bridge.extending)
+    h.step(180)
+    check("the bridge reaches its span",
+          (bridge.root.getPos() - bridge.pos).length() < 0.5,
+          "%s" % bridge.root.getPos())
+    check("it moved from where it was stowed",
+          (bridge.root.getPos() - stowed).length() > 5.0)
+    check("its collision followed",
+          (g.solids[bridge.box_index][0] - bridge.root.getPos()).length() < 0.5)
 
     print("\n[10] Every chapter of Bloom's campaign loads and runs")
     for i, level in enumerate(g.campaign):

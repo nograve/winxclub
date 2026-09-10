@@ -24,6 +24,52 @@ MASK_PICKUP = BitMask32.bit(3)
 
 
 @dataclass
+class PuzzleSpec:
+    """Declarative placement of one interactive object.
+
+    ``group`` ties a puzzle's parts together: runes that open the same gate,
+    pedestals in one sequence, a lever and the bridge it extends.
+    """
+    kind: str
+    pos: Vec3
+    group: str = ""
+    order: int = 0                     # position in a sequence puzzle
+    size: tuple = None
+    travel: tuple = None               # how far a bridge is stowed
+    color: Vec4 = None
+    title: str = ""                    # tablet heading
+    text: str = ""                     # tablet body
+    reward: str = "score"              # what a cache gives up
+
+
+@dataclass
+class Objective:
+    """One line of the level's to-do list, shown in the HUD."""
+    key: str
+    text: str
+    kind: str = "flag"                 # flag | clear | collect | secrets
+    target: str = ""                   # flag name, for kind="flag"
+    count: int = 0
+    required: bool = True
+
+
+def obj_clear(text="Clear out the enemies") -> Objective:
+    return Objective("clear", text, "clear")
+
+
+def obj_collect(n, text) -> Objective:
+    return Objective("collect", text, "collect", count=n)
+
+
+def obj_flag(key, text) -> Objective:
+    return Objective(key, text, "flag", target=key)
+
+
+def obj_secrets(text="Find the hidden caches") -> Objective:
+    return Objective("secrets", text, "secrets", required=False)
+
+
+@dataclass
 class Spawn:
     pos: Vec3
     kind: str = "ghoul"
@@ -49,6 +95,8 @@ class Level:
     gem_goal: int = 0
     hint: str = ""
     gem_name: str = "gem"      # what the collectibles are called in this level
+    puzzles: list = field(default_factory=list)
+    objectives: list = field(default_factory=list)
 
 
 class WorldBuilder:
@@ -495,8 +543,15 @@ def _build_swamp(b: WorldBuilder) -> None:
         b.solid((px, py, pz), (7, 7, 1.0), shade(rock, 1.0),
                 shade(Vec4(0.36, 0.52, 0.34, 1), 1.1))
 
+    # A stranded islet, reachable only across the bridge the levers extend.
+    b.solid((28, 0, 3.0), (10, 10, 1.0), shade(rock, 1.05),
+            shade(Vec4(0.36, 0.52, 0.34, 1), 1.1))
+    b.decor().cylinder((28, 0, 4.0), 0.5, 0.4, 3.0, bark, segments=6)
+
     for _ in range(14):
         x, y = rng.uniform(-70, 70), rng.uniform(-70, 70)
+        if abs(x - 28) < 14 and abs(y) < 14:
+            continue                      # keep the islet and its span clear
         s = rng.uniform(2.0, 4.5)
         b.solid((x, y, s * 0.35), (s, s * 1.2, s * 0.7),
                 shade(rock, rng.uniform(0.75, 1.0)))
@@ -1498,3 +1553,366 @@ def campaign_for(fairy_key: str) -> list:
         else:
             out.append(SHARED_LEVELS[slot])
     return out
+
+
+# ---------------------------------------------------------------------------
+# Puzzles and exploration
+# ---------------------------------------------------------------------------
+def _explore_pack(tablet_pos, title, text, cache_a, cache_b,
+                  rune_positions=(), group="", color=None) -> list:
+    """The standard kit: one inscription, two hidden caches, some runes."""
+    out = [PuzzleSpec("tablet", Vec3(*tablet_pos), title=title, text=text),
+           PuzzleSpec("cache", Vec3(*cache_a), reward="health"),
+           PuzzleSpec("cache", Vec3(*cache_b), reward="magic")]
+    out += [PuzzleSpec("rune", Vec3(*p), group=group, color=color)
+            for p in rune_positions]
+    return out
+
+
+# --- Chapter 2, Alfea: light the barrier runes ------------------------------
+LEVEL_ALFEA.puzzles = _explore_pack(
+    (7, -18, 0.08), "The Barrier Stones",
+    "Four stones carry Alfea's barrier. When the school is threatened they "
+    "go dark, and only a fairy's magic will wake them. Strike each one - "
+    "the barrier will do the rest.",
+    (-38, 8, 6.75), (38, 8, 9.75),
+    rune_positions=((-20, -20, 0.08), (20, -20, 0.08),
+                    (-20, 20, 0.08), (20, 20, 0.08)),
+    group="barrier", color=Vec4(0.55, 0.85, 1.0, 1))
+LEVEL_ALFEA.objectives = [
+    obj_flag("barrier", "Wake the four barrier stones"),
+    obj_clear("Drive the ghouls out of the courtyard"),
+    obj_collect(5, "Gather the loose magic crystals"),
+    obj_secrets(),
+]
+
+# --- Chapter 3, Swamp: two levers extend the bridge to the islet ------------
+LEVEL_SWAMP.puzzles = _explore_pack(
+    (9, -20, 0.35), "Knut's Tally",
+    "Scratched into the post beside the hut: a count of deliveries, and "
+    "three marks that are not a count at all. Someone was paying him, and "
+    "paying him well.",
+    (28, 0, 3.55), (-44, -40, 5.35),
+    rune_positions=((-32, -30, 3.95), (36, -34, 3.95), (30, 30, 3.15),
+                    (-28, 34, 3.55)),
+    group="marshlights", color=Vec4(0.55, 0.95, 0.55, 1))
+LEVEL_SWAMP.puzzles += [
+    PuzzleSpec("lever", Vec3(-3.5, 3.5, 3.45), group="span"),
+    PuzzleSpec("lever", Vec3(3.5, 3.5, 3.45), group="span"),
+    PuzzleSpec("bridge", Vec3(14.5, 0, 3.2), group="span",
+               size=(19.0, 5.0, 0.8), travel=(-19.0, 0.0, -7.0)),
+]
+LEVEL_SWAMP.objectives = [
+    obj_clear("Clear Knut's hideout"),
+    obj_flag("marshlights", "Light the marsh lights out in the bog"),
+    obj_flag("span", "Work both levers to extend the bridge"),
+    obj_secrets(),
+]
+
+# --- Chapter 4, Cloud Tower: sound the sequence from the Book of Fate -------
+_CT_ORDER = ("dusk", "storm", "silence", "dawn")
+LEVEL_CLOUDTOWER.puzzles = _explore_pack(
+    (9, -26, 0.08), "A Page of the Book of Fate",
+    "The lock on the inner hall answers to a verse, not a key:\n\n"
+    "  'First dusk, and then the storm;\n"
+    "   after the storm, silence;\n"
+    "   and only then, the dawn.'\n\n"
+    "Sound the four chimes in that order. Sound them wrongly and the hall "
+    "will forget you were ever here.",
+    (-30, 30, 12.75), (30, -30, 12.75))
+LEVEL_CLOUDTOWER.puzzles += [
+    PuzzleSpec("pedestal", Vec3(-9, -9, 4.2), group="verse", order=0,
+               color=Vec4(0.85, 0.45, 0.35, 1)),      # dusk
+    PuzzleSpec("pedestal", Vec3(9, -9, 4.2), group="verse", order=1,
+               color=Vec4(0.60, 0.55, 0.95, 1)),      # storm
+    PuzzleSpec("pedestal", Vec3(9, 9, 4.2), group="verse", order=2,
+               color=Vec4(0.45, 0.45, 0.55, 1)),      # silence
+    PuzzleSpec("pedestal", Vec3(-9, 9, 4.2), group="verse", order=3,
+               color=Vec4(1.0, 0.88, 0.50, 1)),       # dawn
+    PuzzleSpec("gate", Vec3(0, 19.0, 0.0), group="verse",
+               size=(8.0, 1.8, 10.0)),
+]
+LEVEL_CLOUDTOWER.objectives = [
+    obj_flag("verse", "Sound the four chimes in the verse's order"),
+    obj_clear("Deal with what the noise brings"),
+    obj_collect(4, "Recover the loose pages"),
+    obj_secrets(),
+]
+
+# --- Chapter 5, Roccaluce: the lake's four frozen lights -------------------
+LEVEL_ROCCALUCE.puzzles = _explore_pack(
+    (9, -34, 0.08), "Daphne's Marker",
+    "Set at the lake's edge, in a hand that has not written anything for "
+    "sixteen years:\n\n"
+    "  'Four lights stood over Domino the night it fell. Wake them and I "
+    "will hear you, wherever I am now.'",
+    (-38, -30, 7.65), (0, 42, 9.65),
+    rune_positions=((-26, -22, 4.65), (26, -22, 4.65),
+                    (-30, 28, 6.65), (30, 28, 6.65)),
+    group="lights", color=Vec4(0.95, 0.92, 0.72, 1))
+LEVEL_ROCCALUCE.objectives = [
+    obj_flag("lights", "Wake the four lights above the lake"),
+    obj_clear("Hold the ice against Icy"),
+    obj_collect(4, "Gather the frozen tears"),
+    obj_secrets(),
+]
+
+# --- Chapter 6, Red Fountain: weigh down the vault plates ------------------
+LEVEL_REDFOUNTAIN.puzzles = _explore_pack(
+    (9, -26, 0.08), "Vault Protocol",
+    "Posted beside the arena, in Codatorta's handwriting:\n\n"
+    "  'The vault does not open to magic - that is the point of it. Two "
+    "counterweights onto the two floor plates, and it opens to anyone "
+    "strong enough to push them.'",
+    (-40, 0, 7.05), (40, 0, 7.05))
+LEVEL_REDFOUNTAIN.puzzles += [
+    PuzzleSpec("plate", Vec3(-9, 8, 0.08), group="vault"),
+    PuzzleSpec("plate", Vec3(9, 8, 0.08), group="vault"),
+    PuzzleSpec("block", Vec3(-9, -7, 0.08), size=(4.0, 4.0, 4.0)),
+    PuzzleSpec("block", Vec3(9, -7, 0.08), size=(4.0, 4.0, 4.0)),
+    PuzzleSpec("gate", Vec3(0, 30.0, 0.0), group="vault",
+               size=(11.0, 2.0, 9.0), color=Vec4(0.66, 0.40, 0.34, 1)),
+]
+LEVEL_REDFOUNTAIN.objectives = [
+    obj_flag("vault", "Push both counterweights onto the vault plates"),
+    obj_clear("Hold Red Fountain"),
+    obj_collect(4, "Secure the loose Codex shards"),
+    obj_secrets(),
+]
+
+# --- Chapter 7, Pixie Village: the chime ring ------------------------------
+LEVEL_PIXIEVILLAGE.puzzles = _explore_pack(
+    (9, -30, 0.08), "The Pixies' Rhyme",
+    "Painted around the base of the great tree, small enough that you have "
+    "to kneel:\n\n"
+    "  'Green wakes, then blue,\n"
+    "   gold after, red too,\n"
+    "   and violet last of all -\n"
+    "   then the roots let you through.'",
+    (-34, -30, 1.75), (34, -30, 1.75))
+LEVEL_PIXIEVILLAGE.puzzles += [
+    PuzzleSpec("pedestal", Vec3(0, -13, 1.0), group="rhyme", order=0,
+               color=Vec4(0.45, 0.92, 0.45, 1)),      # green
+    PuzzleSpec("pedestal", Vec3(-12.4, -4.0, 1.0), group="rhyme", order=1,
+               color=Vec4(0.40, 0.70, 1.00, 1)),      # blue
+    PuzzleSpec("pedestal", Vec3(-7.6, 10.5, 1.0), group="rhyme", order=2,
+               color=Vec4(1.00, 0.85, 0.35, 1)),      # gold
+    PuzzleSpec("pedestal", Vec3(7.6, 10.5, 1.0), group="rhyme", order=3,
+               color=Vec4(0.95, 0.35, 0.40, 1)),      # red
+    PuzzleSpec("pedestal", Vec3(12.4, -4.0, 1.0), group="rhyme", order=4,
+               color=Vec4(0.72, 0.45, 0.95, 1)),      # violet
+]
+LEVEL_PIXIEVILLAGE.objectives = [
+    obj_flag("rhyme", "Wake the chimes in the rhyme's order"),
+    obj_clear("Get the pixies clear"),
+    obj_collect(5, "Carry the pixies to safety"),
+    obj_secrets(),
+]
+
+# --- Chapters 9 and 10: no puzzles, these are the running battles ----------
+LEVEL_SIEGE_CLOUDTOWER.objectives = [
+    obj_clear("Cut through the Army of Decay"),
+    obj_secrets(),
+]
+LEVEL_SIEGE_CLOUDTOWER.puzzles = [
+    PuzzleSpec("cache", Vec3(-30, 30, 12.75), reward="health"),
+    PuzzleSpec("cache", Vec3(30, 30, 12.75), reward="magic"),
+    PuzzleSpec("tablet", Vec3(9, -26, 0.08), title="Griffin's Order",
+               text="Nailed to the dormitory door, in a hurry:\n\n"
+                    "  'Every witch to her room and the door held shut. "
+                    "Whatever is in the corridors is not a student and it is "
+                    "not alive. - G.'"),
+]
+LEVEL_BATTLE_ALFEA.objectives = [
+    obj_clear("Hold the courtyard, then finish the Trix"),
+    obj_secrets(),
+]
+LEVEL_BATTLE_ALFEA.puzzles = [
+    PuzzleSpec("cache", Vec3(-38, 8, 6.75), reward="health"),
+    PuzzleSpec("cache", Vec3(38, 8, 9.75), reward="magic"),
+    PuzzleSpec("cache", Vec3(0, -34, 12.75), reward="health"),
+]
+
+
+# --- Home realms: an inscription, three realm-lights and two caches --------
+# Positions are derived from each realm's own collectible and pickup spots,
+# which are already known to sit on solid ground.
+_HOME_LORE = {
+    "bloom": ("A Note on the Fridge",
+              "  'Bloom - gone to the shop, back by six. There is a casserole. "
+              "Do NOT let Kiko into the greenhouse again. Love, Mum.'\n\n"
+              "Sixteen years of a life that was never quite the whole story."),
+    "stella": ("The Ring's Inventory",
+               "Carved above the treasury door:\n\n"
+               "  'The Ring of Solaria answers to the blood of Solaria and to "
+               "nothing else. Whoever takes it will find they have stolen a "
+               "very heavy piece of jewellery and nothing more.'"),
+    "flora": ("The Grove's Own Record",
+              "Grown into the bark, letter by letter, over centuries:\n\n"
+              "  'What is planted here is not owned here. Take a seed, leave a "
+              "seed. Anyone who takes without leaving will be shown the way "
+              "out by the roots themselves.'"),
+    "musa": ("The Valley's First Score",
+             "Cut into the stage where the valley's first piece was played:\n\n"
+             "  'Melody is not the sound. Melody is the silence you put it "
+             "into. Guard both.'"),
+    "tecna": ("Realm Log, Entry 44,912",
+              "  'Anomaly logged: an unregistered mass crossed the perimeter "
+              "at 03:14 and was not detected by any of nine independent "
+              "systems. Probability of simultaneous failure: 1 in 4.1 billion. "
+              "Conclusion: this was not a failure.'"),
+    "aisha": ("The Tide Tables",
+              "Set into the causeway, worn almost smooth:\n\n"
+              "  'Andros keeps no walls. The sea is the wall. When the sea "
+              "stops answering, that is when you should be afraid.'"),
+}
+
+_REALM_LIGHT = {
+    "bloom": Vec4(1.00, 0.60, 0.30, 1), "stella": Vec4(1.00, 0.88, 0.40, 1),
+    "flora": Vec4(0.50, 0.92, 0.50, 1), "musa": Vec4(0.95, 0.45, 0.70, 1),
+    "tecna": Vec4(0.40, 0.95, 0.90, 1), "aisha": Vec4(0.40, 0.80, 1.00, 1),
+}
+
+for _key, (_calm, _siege) in HOME_LEVELS.items():
+    _title, _text = _HOME_LORE[_key]
+    _light = _REALM_LIGHT[_key]
+    _tab = Vec3(_calm.start.x + 6.0, _calm.start.y + 5.0, 0.08)
+    # Runes go beside the collectibles, caches where the health pickups are.
+    _runes = [Vec3(g.x + 3.0, g.y, g.z - 0.6) for g in _calm.gems[:3]]
+    _caches = [Vec3(h.x, h.y + 3.0, h.z - 0.6) for h in _calm.hearts[:2]]
+    _calm.puzzles = _explore_pack(
+        _tab, _title, _text, _caches[0], _caches[1],
+        rune_positions=[(r.x, r.y, r.z) for r in _runes],
+        group="realmlights", color=_light)
+    _calm.objectives = [
+        obj_flag("realmlights", "Wake the three realm lights"),
+        obj_clear("Drive them off your own doorstep"),
+        obj_collect(_calm.gem_goal, "Gather what was scattered"),
+        obj_secrets(),
+    ]
+    _siege.puzzles = [
+        PuzzleSpec("tablet", _tab, title=_title, text=_text),
+        PuzzleSpec("cache", _caches[0], reward="health"),
+        PuzzleSpec("cache", _caches[1], reward="magic"),
+    ]
+    _siege.objectives = [
+        obj_clear("Break the siege"),
+        obj_secrets(),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Placement snapping
+# ---------------------------------------------------------------------------
+# Collectibles and puzzle objects are authored at roughly the right spot and
+# then snapped onto the geometry that is actually there.  Hand-written Z
+# values drift the moment a builder changes, and an object floating out of
+# reach - or buried inside a pillar - is invisible in the level data.
+def _top_at(boxes, x, y, ceiling):
+    """Highest surface at (x, y) at or below ``ceiling``; 0 if none."""
+    best_z = 0.0
+    for c, h in boxes:
+        if abs(x - c.x) <= h.x and abs(y - c.y) <= h.y:
+            top = c.z + h.z
+            if top <= ceiling and top > best_z:
+                best_z = top
+    return best_z
+
+
+def _surface_under(boxes, x, y, want_z, search=9.0):
+    """Find the surface an object at (x, y, want_z) should rest on.
+
+    Prefers a nearby raised platform whose top is close to the intended
+    height, snapping the object onto it; falls back to the ground.
+    Returns (x, y, z).
+    """
+    best = None
+    best_score = 1e9
+    for c, h in boxes:
+        top = c.z + h.z
+        if top < 0.5 or abs(top - want_z) > 3.5:
+            continue
+        # Posts, lamps and tree trunks are not platforms - nothing should end
+        # up balanced on one.
+        if h.x < 1.8 or h.y < 1.8:
+            continue
+        px = max(c.x - h.x + 0.9, min(c.x + h.x - 0.9, x))
+        py = max(c.y - h.y + 0.9, min(c.y + h.y - 0.9, y))
+        d = math.hypot(px - x, py - y)
+        if d > search:
+            continue
+        score = d + abs(top - want_z) * 0.5
+        if score < best_score:
+            best, best_score = (px, py), score
+    if best is not None:
+        px, py = best
+        # Take the exposed surface there, not the box we happened to match:
+        # on stacked terraces the nearest box is often the step below.
+        return (px, py, _top_at(boxes, px, py, want_z + 3.5))
+    return (x, y, _top_at(boxes, x, y, want_z + 1.5))
+
+
+def _nudge_clear(boxes, x, y, z, radius=1.1):
+    """Slide a point out of any solid it landed inside.
+
+    Snapping to a surface can still drop something into a lamp post or a
+    tree trunk standing on that surface; this pushes it out along whichever
+    axis needs the least movement.
+    """
+    for _ in range(4):
+        moved = False
+        for c, h in boxes:
+            if not (c.z - h.z < z + 0.6 and z < c.z + h.z):
+                continue
+            dx, dy = x - c.x, y - c.y
+            ox = h.x + radius - abs(dx)
+            oy = h.y + radius - abs(dy)
+            if ox <= 0.0 or oy <= 0.0:
+                continue
+            if ox < oy:
+                x = c.x + math.copysign(h.x + radius, dx or 1.0)
+            else:
+                y = c.y + math.copysign(h.y + radius, dy or 1.0)
+            moved = True
+        if not moved:
+            break
+    return x, y
+
+
+def _snap_level(level: Level) -> None:
+    wb = WorldBuilder()
+    level.build(wb)
+    boxes = wb.boxes
+
+    def snap(v, lift=0.0):
+        x, y, z = _surface_under(boxes, v.x, v.y, v.z)
+        # Alternate nudging clear of obstructions with re-settling onto
+        # whatever is under the new spot, until both agree.
+        for _ in range(4):
+            nx, ny = _nudge_clear(boxes, x, y, z + lift)
+            if abs(nx - x) < 1e-6 and abs(ny - y) < 1e-6:
+                break
+            x, y = nx, ny
+            z = _top_at(boxes, x, y, z + 2.0)
+        return Vec3(x, y, z + lift)
+
+    # Pickups hover a little above their surface so they read as collectible.
+    level.gems = [snap(g, 1.4) for g in level.gems]
+    level.hearts = [snap(h, 1.4) for h in level.hearts]
+    for spec in level.puzzles:
+        if spec.kind == "bridge":
+            continue                      # placed deliberately, stows below
+        spec.pos = snap(spec.pos)
+    # Enemies stand on the ground; the AI settles them, but starting them
+    # inside a wall looks broken for the first frame.
+    for sp in level.enemies:
+        if sp.kind in ("wisp", "icy", "darcy", "stormy"):
+            continue                      # these fly
+        sp.pos = snap(sp.pos, 0.2)
+
+
+for _lv in list(SHARED_LEVELS.values()):
+    _snap_level(_lv)
+for _calm, _siege in HOME_LEVELS.values():
+    _snap_level(_calm)
+    _snap_level(_siege)

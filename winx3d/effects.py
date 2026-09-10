@@ -80,6 +80,9 @@ class EffectSystem:
         self._bolt_cache: dict[tuple, NodePath] = {}
         self._spark_cache: dict[tuple, NodePath] = {}
         self.solids: list[tuple[Vec3, Vec3]] = []
+        # Interactables hit by a bolt this frame; the game applies them after
+        # the projectile pass so a puzzle cannot mutate the list mid-iteration.
+        self.pending_shots: list = []
 
     # -- construction -------------------------------------------------------
     def set_solids(self, boxes) -> None:
@@ -167,11 +170,12 @@ class EffectSystem:
                 return True
         return False
 
-    def update(self, dt: float, player, enemies) -> None:
-        self._update_projectiles(dt, player, enemies)
+    def update(self, dt: float, player, enemies, interactables=()) -> None:
+        self._update_projectiles(dt, player, enemies, interactables)
         self._update_particles(dt)
 
-    def _update_projectiles(self, dt, player, enemies) -> None:
+    def _update_projectiles(self, dt, player, enemies,
+                            interactables=()) -> None:
         alive = []
         for p in self.projectiles:
             p.life -= dt
@@ -211,6 +215,15 @@ class EffectSystem:
                         self.burst(pos, e.hit_color, 9, 6.5, 0.34)
                         hit = True
                         break
+                if not hit:
+                    # Some puzzle objects are lit by hitting them with magic.
+                    for it in interactables:
+                        if not it.shootable or it.solved:
+                            continue
+                        if (pos - it.center()).length() < p.radius + 2.2:
+                            self.pending_shots.append(it)
+                            hit = True
+                            break
             if hit:
                 p.np.removeNode()
                 continue
