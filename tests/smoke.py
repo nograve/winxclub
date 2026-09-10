@@ -29,7 +29,8 @@ loadPrcFileData("test", "\n".join([
 from winx3d import config as C                       # noqa: E402
 from winx3d import characters, lore                  # noqa: E402
 from winx3d.app import Game                          # noqa: E402
-from winx3d.world import LEVELS                      # noqa: E402
+from winx3d.world import (CAMPAIGN_LENGTH, HOME_LEVELS,     # noqa: E402
+                          campaign_for, WorldBuilder)
 
 DT = 1.0 / 60.0
 FAILURES = []
@@ -82,9 +83,7 @@ def main():
     g = h.game
 
     print("\n[1] Lore integrity")
-    check("nine chapters defined", len(lore.CHAPTERS) == 9)
-    check("campaign order matches the levels",
-          [lv.key for lv in LEVELS] == lore.CAMPAIGN)
+    check("ten chapters per campaign", CAMPAIGN_LENGTH == 10)
     check("every chapter has dialogue",
           all(c.intro and c.outro for c in lore.CHAPTERS.values()))
     check("every speaker referenced exists",
@@ -94,8 +93,40 @@ def main():
     codex = {c.codex for c in lore.CHAPTERS.values() if c.codex}
     check("all four Codex pieces appear", codex == set(lore.CODEX_PIECES),
           str(sorted(codex)))
-    check("chapters are numbered 1-9",
-          sorted(c.number for c in lore.CHAPTERS.values()) == list(range(1, 10)))
+
+    print("\n[1b] Every fairy gets her own realm")
+    seen_home, seen_siege = set(), set()
+    for f in characters.ROSTER:
+        keys = lore.campaign_keys(f.key)
+        levels = [lv.key for lv in campaign_for(f.key)]
+        ok = keys == levels and len(keys) == CAMPAIGN_LENGTH
+        numbers = [lore.CHAPTERS[k].number for k in keys]
+        ok = ok and numbers == list(range(1, 11))
+        # Chapters 1 and 8 must be hers; 2-7, 9 and 10 are shared.
+        ok = ok and keys[0] == "home_" + f.key and keys[7] == "siege_" + f.key
+        check("%-7s campaign is well formed" % f.name, ok, str(keys))
+        seen_home.add(keys[0])
+        seen_siege.add(keys[7])
+        # Her chapter 1 and 8 should be set in her own realm.
+        check("%-7s opens on %-8s" % (f.name, f.home_realm),
+              lore.CHAPTERS[keys[0]].realm == f.home_realm,
+              lore.CHAPTERS[keys[0]].realm)
+    check("all six home chapters are distinct", len(seen_home) == 6)
+    check("all six siege chapters are distinct", len(seen_siege) == 6)
+    check("shared chapters are actually shared",
+          len({tuple(lore.campaign_keys(f.key)[1:7])
+               for f in characters.ROSTER}) == 1)
+
+    print("\n[1c] Every home realm builds")
+    for key, (calm, siege) in HOME_LEVELS.items():
+        good = True
+        for lv in (calm, siege):
+            wb = WorldBuilder()
+            lv.build(wb)
+            good = good and len(wb.boxes) > 20 and not wb.mesh.is_empty()
+        check("%-7s realm geometry (calm + besieged)" % key, good)
+    check("home realms are visually distinct",
+          len({id(HOME_LEVELS[f.key][0].build) for f in characters.ROSTER}) == 6)
 
     print("\n[2] Title and menus")
     h.step(3)
@@ -122,7 +153,7 @@ def main():
     g._refresh_select()
     g.on_confirm()
     check("a locked fairy cannot be chosen", g.state == "select")
-    g.profile["levels_cleared"] = len(LEVELS)
+    g.profile["levels_cleared"] = CAMPAIGN_LENGTH
     check("Aisha unlocks after clearing the campaign",
           g.fairy_unlocked(aisha))
     g.profile["levels_cleared"] = 0
@@ -140,7 +171,7 @@ def main():
     check("dialogue advances line by line", lines == len(g.chapter.intro),
           "%d lines" % lines)
     check("play begins after the intro", g.state == "playing")
-    check("level is Gardenia Park", g.level.key == "gardenia")
+    check("level is Gardenia Park", g.level.key == "home_bloom")
     check("Knut is the chapter 1 boss",
           any(b.name == "knut" for b in g.bosses))
     check("ghouls spawned",
@@ -274,19 +305,37 @@ def main():
     check("results follow the outro", g.state == "results")
     check("progress was recorded", g.profile["levels_cleared"] >= 1)
 
-    print("\n[10] Every chapter loads and runs")
-    for i, level in enumerate(LEVELS):
+    print("\n[10] Every chapter of Bloom's campaign loads and runs")
+    for i, level in enumerate(g.campaign):
         g.load_level(i)
         h.skip_story()
         h.step(30)
         ch = lore.CHAPTERS[level.key]
         ok = (g.state == "playing" and g.level.key == level.key
               and g.player is not None and len(g.enemy_list) > 0)
-        check("chapter %d: %-24s" % (ch.number, ch.title), ok,
+        check("chapter %2d: %-24s" % (ch.number, ch.title), ok,
               "state=%s" % g.state)
 
+    print("\n[10b] Each fairy's own chapters load and run")
+    for f in characters.ROSTER:
+        g.start_run(f)
+        h.skip_story()
+        h.step(20)
+        opened = (g.state == "playing" and g.level.key == "home_" + f.key
+                  and g.player.spec.key == f.key)
+        # Then jump straight to her chapter 8 and play a little of it.
+        g.load_level(7)
+        h.skip_story()
+        h.step(20)
+        sieged = (g.state == "playing" and g.level.key == "siege_" + f.key
+                  and any(getattr(e, "is_boss", False) for e in g.enemy_list))
+        check("%-7s plays %s and its siege" % (f.name, f.home_realm),
+              opened and sieged, "state=%s key=%s" % (g.state, g.level.key))
+
     print("\n[11] The Trix")
-    g.load_level(lore.CAMPAIGN.index("battle_alfea"))
+    g.start_run(characters.BY_KEY["bloom"])
+    h.skip_story()
+    g.load_level(CAMPAIGN_LENGTH - 1)
     h.skip_story()
     h.step(3)
     names = {b.name for b in g.bosses}

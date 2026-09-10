@@ -8,7 +8,7 @@ giving a run cycle, a flight pose and an attack pose.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from panda3d.core import (NodePath, TransparencyAttrib, Vec3, Vec4)
 
@@ -34,7 +34,11 @@ class Fairy:
     magic_rate: float = 1.0   # multiplier on magic regeneration
     bolts: int = 1            # projectiles per shot
     spread: float = 0.0       # degrees between projectiles
-    realm: str = "magix"      # home realm
+    realm: str = "magix"      # the realm she was born to
+    # Where she actually grew up, and so where her own chapters are set.
+    # These differ only for Bloom: born on Domino, raised on Earth, which is
+    # the premise the first season turns on.
+    home_realm: str = ""
     ultimate: str = "MAGIC WINX"   # her signature spell, shown when charged
     season: int = 1           # the season she joins the Winx in
     skin: Vec4 = field(default=SKIN)
@@ -47,7 +51,8 @@ ROSTER: list[Fairy] = [
           accent=Vec4(1.0, 0.78, 0.30, 1), magic=Vec4(1.0, 0.55, 0.15, 1),
           wing=Vec4(1.0, 0.72, 0.45, 0.55),
           speed=1.0, power=1.15, magic_rate=1.0,
-          realm="domino", ultimate="DRAGON FLAME", season=1),
+          realm="domino", home_realm="earth",
+          ultimate="DRAGON FLAME", season=1),
     Fairy("stella", "Stella", "Sun and Moon",
           "Bright, fast bolts and a generous magic pool.",
           hair=Vec4(0.98, 0.85, 0.38, 1), dress=Vec4(1.0, 0.62, 0.20, 1),
@@ -85,6 +90,10 @@ ROSTER: list[Fairy] = [
           skin=Vec4(0.62, 0.44, 0.32, 1),
           realm="andros", ultimate="MORPHIX WAVE", season=2),
 ]
+
+# Default home_realm to the birth realm for everyone but Bloom.
+ROSTER = [f if f.home_realm else replace(f, home_realm=f.realm)
+          for f in ROSTER]
 
 BY_KEY = {f.key: f for f in ROSTER}
 

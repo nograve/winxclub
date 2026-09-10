@@ -17,20 +17,28 @@ from .effects import EffectSystem, Pickup
 from .geometry import MeshBuilder, shade
 from .hud import HUD, card, text
 from .player import Player
-from .world import LEVELS, WorldBuilder
+from .world import CAMPAIGN_LENGTH, campaign_for, WorldBuilder
 
 TITLE_COLOR = (1.0, 0.55, 0.78, 1)
 
 # Three synthesised tracks cover the campaign: a bright one for the safe
 # places, a darker one for the wild ones, and a driving one for the Trix.
 MUSIC_FOR = {
-    "gardenia": "music_alfea", "alfea": "music_alfea",
-    "pixievillage": "music_alfea",
+    "alfea": "music_alfea", "pixievillage": "music_alfea",
     "swamp": "music_wood", "roccaluce": "music_wood",
     "redfountain": "music_wood",
     "cloudtower": "music_tower", "siege_cloudtower": "music_tower",
     "battle_alfea": "music_tower",
 }
+
+
+def music_for(level_key: str) -> str:
+    """Peaceful home realms get the bright track, sieges get the dark one."""
+    if level_key.startswith("home_"):
+        return "music_alfea"
+    if level_key.startswith("siege_"):
+        return "music_tower"
+    return MUSIC_FOR.get(level_key, "music_alfea")
 
 
 def _portal_model(color: Vec4) -> NodePath:
@@ -96,6 +104,7 @@ class Game(ShowBase):
         self.hud = None
         self.player = None
         self.level = None
+        self.campaign = campaign_for("bloom")
         self.level_index = 0
         self.level_node = None
         self.enemy_list: list = []
@@ -273,7 +282,7 @@ class Game(ShowBase):
         text(self.screen,
              "Best score  %06d          Levels cleared  %d/%d"
              % (self.profile.get("high_score", 0),
-                self.profile.get("levels_cleared", 0), len(LEVELS)),
+                self.profile.get("levels_cleared", 0), CAMPAIGN_LENGTH),
              0, -0.62, 0.040, (0.80, 0.85, 1.0, 1), TextNode.ACenter)
         text(self.screen, "Arrow keys / W S to choose   -   Enter to confirm",
              0, -0.78, 0.042, (1, 1, 1, 0.75), TextNode.ACenter)
@@ -415,7 +424,7 @@ class Game(ShowBase):
         """Aisha of Andros joins the Winx in their second year, so she is
         locked until the first-year campaign has been cleared once."""
         return f.season <= 1 or \
-            self.profile.get("levels_cleared", 0) >= len(LEVELS)
+            self.profile.get("levels_cleared", 0) >= CAMPAIGN_LENGTH
 
     def show_select(self) -> None:
         self.state = "select"
@@ -431,6 +440,8 @@ class Game(ShowBase):
                               (1, 1, 1, 0.90), TextNode.ACenter)
         self.sel_stats = text(self.screen, "", 0, -0.60, 0.040,
                               (0.75, 0.90, 1.0, 1), TextNode.ACenter)
+        self.sel_realm = text(self.screen, "", 0, -0.69, 0.038,
+                              (1.0, 0.82, 0.45, 1), TextNode.ACenter)
         self.sel_row = []
         n = len(characters.ROSTER)
         for i, f in enumerate(characters.ROSTER):
@@ -464,6 +475,18 @@ class Game(ShowBase):
             "Speed %s    Power %s    Magic %s    %s"
             % (self._pips(f.speed), self._pips(f.power),
                self._pips(f.magic_rate), bolts))
+        if unlocked:
+            # Chapters 1 and 8 change with the fairy, so say so here.
+            keys = lore.campaign_keys(f.key)
+            ch1 = lore.CHAPTERS[keys[0]]
+            ch8 = lore.CHAPTERS[keys[7]]
+            self.sel_realm.setText(
+                "Her realm:  %s        Chapters 1 and 8:  %s  /  %s"
+                % (lore.REALMS.get(f.home_realm, "").split(" - ")[-1],
+                   ch1.title, ch8.title))
+        else:
+            self.sel_realm.setText("")
+
         for i, chip in enumerate(self.sel_row):
             sel = i == self.select_index
             locked = not self.fairy_unlocked(characters.ROSTER[i])
@@ -619,6 +642,9 @@ class Game(ShowBase):
     # ------------------------------------------------------------------
     def start_run(self, spec) -> None:
         self.spec = spec
+        # Chapters 1 and 8 are set in this fairy's own realm, so the campaign
+        # is assembled per run rather than being a fixed list.
+        self.campaign = campaign_for(spec.key)
         self.level_index = 0
         self.total_score = 0
         self.lives = C.START_LIVES
@@ -627,7 +653,7 @@ class Game(ShowBase):
     def load_level(self, index: int) -> None:
         self.unload_level()
         self.level_index = index
-        level = LEVELS[index]
+        level = self.campaign[index]
         self.level = level
 
         builder = WorldBuilder()
@@ -674,7 +700,7 @@ class Game(ShowBase):
         self.death_timer = 0.0
         self.finish_timer = 0.0
         self.level_time = 0.0
-        self.audio.play_music(MUSIC_FOR.get(level.key, "music_alfea"))
+        self.audio.play_music(music_for(level.key))
 
         # Frame the camera on the level while the chapter's dialogue plays.
         self.player.update_camera(self.camera, 1.0)
@@ -787,7 +813,7 @@ class Game(ShowBase):
                                          self.total_score)
         C.save_profile(self.profile)
 
-        last = self.level_index >= len(LEVELS) - 1
+        last = self.level_index >= len(self.campaign) - 1
         self.clear_screen()
         self._title_backdrop()
         title = "FIRST YEAR COMPLETE" if last else "CHAPTER COMPLETE"
@@ -822,7 +848,7 @@ class Game(ShowBase):
             self.hud.set_visible(False)
 
     def advance_level(self) -> None:
-        if self.level_index >= len(LEVELS) - 1:
+        if self.level_index >= len(self.campaign) - 1:
             self.end_run()
             self.show_title()
         else:

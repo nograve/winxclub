@@ -216,11 +216,16 @@ def _spire(b: WorldBuilder, x, y, radius, height, wall, rune, segments=10)\
 # ---------------------------------------------------------------------------
 # Chapter 1 - Gardenia Park (Earth)
 # ---------------------------------------------------------------------------
-def _build_gardenia(b: WorldBuilder) -> None:
+def _build_gardenia(b: WorldBuilder, besieged: bool = False) -> None:
+    """Bloom's home is Earth, not Domino - she was raised in Gardenia."""
     rng = random.Random(101)
     grass_a = Vec4(0.46, 0.70, 0.36, 1)
     grass_b = Vec4(0.40, 0.64, 0.33, 1)
     path = Vec4(0.78, 0.72, 0.60, 1)
+    if besieged:
+        grass_a = Vec4(0.34, 0.33, 0.21, 1)
+        grass_b = Vec4(0.29, 0.28, 0.18, 1)
+        path = Vec4(0.52, 0.48, 0.42, 1)
 
     b.mesh.grid_ground(170, 170, grass_a, grass_b, step=11.0)
     b.clip((0, 0, -2.0), (200, 200, 4.0))
@@ -282,6 +287,8 @@ def _build_gardenia(b: WorldBuilder) -> None:
         b.mesh.cylinder((x, 50, 0), 0.10, 0.10, 2.2, Vec4(0.28, 0.28, 0.32, 1),
                         segments=5)
     b.clip((0, 50, 2.0), (120, 0.8, 4.0))
+    if besieged:
+        _blight(b, rng, 20, Vec4(0.66, 0.62, 0.56, 1), radius=(16, 56))
 
 
 LEVEL_GARDENIA = Level(
@@ -902,18 +909,592 @@ LEVEL_PIXIEVILLAGE = Level(
 
 
 # ---------------------------------------------------------------------------
-# The campaign, in story order
+# Home realms - one per fairy, each with a peacetime and a besieged state
 # ---------------------------------------------------------------------------
-LEVELS = [
-    LEVEL_GARDENIA,          # 1. The Ogre in the Park
-    LEVEL_ALFEA,             # 2. College for Fairies
-    LEVEL_SWAMP,             # 3. Black Mud Swamp
-    LEVEL_CLOUDTOWER,        # 4. The Book of Fate
-    LEVEL_ROCCALUCE,         # 5. Lake Roccaluce
-    LEVEL_REDFOUNTAIN,       # 6. Red Fountain
-    LEVEL_PIXIEVILLAGE,      # 7. Pixie Village
-    LEVEL_SIEGE_CLOUDTOWER,  # 8. Cloud Tower Has Fallen
-    LEVEL_BATTLE_ALFEA,      # 9. The Battle of Alfea
-]
+def _in_approach(x: float, y: float, half_width: float = 9.0) -> bool:
+    """True inside the corridor the player spawns in, looking north.
 
-BY_KEY = {lv.key: lv for lv in LEVELS}
+    Ring-placed props are skipped here so the first thing a chapter shows is
+    its landmark, not the back of a pillar.
+    """
+    return y < -6.0 and abs(x) < half_width
+
+
+def _blight(b: WorldBuilder, rng, count: int, rubble: Vec4,
+            radius=(20, 70)) -> None:
+    """Rubble and burning wreckage, shared by every besieged variant."""
+    for _ in range(count):
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(*radius)
+        s = rng.uniform(1.4, 3.8)
+        b.solid((math.cos(a) * r, math.sin(a) * r, s * 0.35),
+                (s, s * 1.3, s * 0.7), shade(rubble, rng.uniform(0.55, 0.9)))
+    for _ in range(count // 2):
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(*radius)
+        b.glass().sphere((math.cos(a) * r, math.sin(a) * r,
+                          rng.uniform(0.8, 2.4)), rng.uniform(1.2, 2.6),
+                         Vec4(0.95, 0.45, 0.20, 0.45), segments=7, rings=5)
+
+
+# --- Solaria (Stella) ------------------------------------------------------
+def _build_solaria(b: WorldBuilder, besieged: bool = False) -> None:
+    """The Sun Palace: white marble and gold under a permanent noon."""
+    rng = random.Random(211)
+    marble = Vec4(0.94, 0.91, 0.84, 1)
+    gold = Vec4(0.96, 0.78, 0.32, 1)
+    sand = Vec4(0.90, 0.82, 0.62, 1)
+    if besieged:
+        marble = Vec4(0.62, 0.58, 0.56, 1)
+        gold = Vec4(0.66, 0.52, 0.26, 1)
+        sand = Vec4(0.58, 0.52, 0.42, 1)
+
+    b.mesh.grid_ground(190, 190, sand, shade(sand, 0.94), step=12.0)
+    b.clip((0, 0, -2.0), (230, 230, 4.0))
+    b.bounds(80, 80)
+
+    # A vast tiled plaza in front of the palace steps.
+    b.mesh.grid_ground(76, 76, shade(marble, 1.0), shade(marble, 0.92),
+                       step=9.5, center=(0, 0, 0.06))
+
+    # The palace: a stepped ziggurat crowned with the sun disc.
+    for i, (w, h) in enumerate(((46, 4.0), (36, 4.0), (26, 4.0))):
+        b.solid((0, 44, 2.0 + i * 4.0), (w, 26 - i * 5, h), marble,
+                shade(marble, 1.06))
+    b.solid((0, 44, 15.0), (18, 16, 8.0), shade(marble, 1.04), gold)
+    b.mesh.cylinder((0, 44, 19.0), 7.0, 0.0, 9.0, gold, segments=14)
+    b.decor().sphere((0, 44, 31.0), 3.4, Vec4(1.0, 0.92, 0.45, 1),
+                     segments=14, rings=10)
+    for sx in (-1, 1):
+        b.tower(sx * 26, 44, 5.0, 24.0, shade(marble, 0.96), gold)
+
+    # Colonnade around the plaza - gold pillars, and something to fly between.
+    for i in range(20):
+        a = math.tau * i / 20
+        x, y = math.cos(a) * 34.0, math.sin(a) * 34.0
+        if _in_approach(x, y):
+            continue
+        b.mesh.cylinder((x, y, 0), 1.3, 1.1, 11.0, marble, segments=9)
+        b.mesh.cylinder((x, y, 11.0), 1.7, 1.5, 1.2, gold, segments=9)
+        b.boxes.append((Vec3(x, y, 6.0), Vec3(1.4, 1.4, 6.0)))
+
+    # Floating sun terraces - Solaria's rings, in miniature.
+    for i in range(6):
+        a = math.tau * i / 6 + 0.4
+        x, y = math.cos(a) * 22.0, math.sin(a) * 22.0
+        z = 13.0 + (i % 3) * 4.0
+        b.solid((x, y, z), (9, 9, 1.2), shade(marble, 1.05), gold)
+        b.decor().cylinder((x, y, z + 0.7), 0.6, 0.0, 3.0, gold, segments=8)
+
+    # Obelisks and reflecting pools out on the sand.
+    for i in range(8):
+        a = math.tau * i / 8 + 0.2
+        x, y = math.cos(a) * 58.0, math.sin(a) * 58.0
+        if _in_approach(x, y):
+            continue
+        h = rng.uniform(10.0, 16.0)
+        b.solid((x, y, h * 0.5), (3.0, 3.0, h), shade(gold, 0.9))
+        b.decor().cylinder((x, y, h), 2.1, 0.0, 4.0, gold, segments=6)
+    if not besieged:
+        for (px, py) in ((-38, -14), (38, -14)):
+            b.glass().grid_ground(20, 20, Vec4(0.55, 0.82, 0.95, 0.55),
+                                  Vec4(0.48, 0.76, 0.92, 0.55), step=10.0,
+                                  center=(px, py, 0.28))
+    else:
+        _blight(b, rng, 20, marble, radius=(18, 62))
+
+
+# --- Lynphea (Flora) -------------------------------------------------------
+def _build_lynphea(b: WorldBuilder, besieged: bool = False) -> None:
+    """A world grown past human scale: flowers taller than the fairies."""
+    rng = random.Random(223)
+    moss = Vec4(0.32, 0.58, 0.30, 1)
+    moss_b = Vec4(0.27, 0.51, 0.27, 1)
+    bark = Vec4(0.42, 0.31, 0.22, 1)
+    petal = [Vec4(0.98, 0.55, 0.72, 1), Vec4(0.95, 0.72, 0.35, 1),
+             Vec4(0.72, 0.55, 0.95, 1), Vec4(0.98, 0.92, 0.55, 1)]
+    if besieged:
+        moss = Vec4(0.36, 0.34, 0.20, 1)
+        moss_b = Vec4(0.30, 0.29, 0.17, 1)
+        petal = [shade(p, 0.45) for p in petal]
+
+    b.mesh.grid_ground(190, 190, moss, moss_b, step=11.0)
+    b.clip((0, 0, -2.0), (230, 230, 4.0))
+    b.bounds(80, 80)
+
+    # Colossal flowers: a stem you can walk around and a petal disc on top.
+    for i in range(14):
+        a = math.tau * i / 14 + rng.uniform(-0.15, 0.15)
+        r = rng.uniform(18, 52)
+        x, y = math.cos(a) * r, math.sin(a) * r
+        if _in_approach(x, y, 11.0):
+            continue
+        h = rng.uniform(8.0, 18.0)
+        col = petal[i % len(petal)]
+        b.mesh.cylinder((x, y, 0), 1.0, 0.7, h, Vec4(0.34, 0.56, 0.30, 1),
+                        segments=8)
+        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(1.0, 1.0, h * 0.5)))
+        # The petal disc doubles as a platform.
+        b.solid((x, y, h), (11, 11, 0.9), col, shade(col, 1.15))
+        for k in range(7):
+            pa = math.tau * k / 7
+            b.decor().cylinder((x + math.cos(pa) * 5.4, y + math.sin(pa) * 5.4,
+                                h + 0.4), 2.2, 0.0, 2.0, shade(col, 1.1),
+                               segments=6)
+        b.decor().sphere((x, y, h + 1.2), 1.8, Vec4(0.98, 0.88, 0.40, 1),
+                         segments=9, rings=6, squash=0.5)
+
+    # The heart of the grove: one enormous tree with a spiral of broad roots.
+    b.mesh.cylinder((0, 0, 0), 6.0, 4.0, 20.0, bark, segments=16)
+    b.boxes.append((Vec3(0, 0, 10.0), Vec3(5.4, 5.4, 10.0)))
+    for k in range(5):
+        b.mesh.cylinder((0, 0, 18.0 + k * 3.0), 16.0 - k * 3.0, 0.0,
+                        5.0 + k * 0.5, shade(moss, 0.80 + 0.12 * k),
+                        segments=14)
+    for i in range(10):
+        a = math.tau * i / 10 * 1.8
+        b.solid((math.cos(a) * (8.0 + i * 0.9), math.sin(a) * (8.0 + i * 0.9),
+                 1.0 + i * 1.7), (6.0, 6.0, 1.1), bark, shade(moss, 1.2))
+
+    # Vines, ferns and mushrooms filling the floor.
+    for _ in range(80):
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(10, 72)
+        x, y = math.cos(a) * r, math.sin(a) * r
+        kind = rng.random()
+        if kind < 0.45:
+            hh = rng.uniform(1.4, 3.2)
+            for k in range(3):
+                b.mesh.cylinder((x, y, hh * 0.3 * k), 2.0 - k * 0.5, 0.2,
+                                hh * 0.5, shade(moss, 0.9 + 0.15 * k),
+                                segments=7)
+        elif kind < 0.75:
+            hh = rng.uniform(1.0, 2.6)
+            b.mesh.cylinder((x, y, 0), 0.30, 0.26, hh,
+                            Vec4(0.88, 0.86, 0.76, 1), segments=6)
+            b.mesh.cylinder((x, y, hh), 1.5, 0.0, 1.2,
+                            petal[rng.randrange(len(petal))], segments=8)
+        else:
+            b.mesh.cylinder((x, y, 0), 0.14, 0.10, rng.uniform(1.0, 2.2),
+                            Vec4(0.34, 0.58, 0.30, 1), segments=5)
+            b.mesh.sphere((x, y, rng.uniform(1.2, 2.4)), rng.uniform(0.3, 0.6),
+                          petal[rng.randrange(len(petal))], segments=6, rings=5)
+    for _ in range(24):
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(56, 76)
+        b.tree(math.cos(a) * r, math.sin(a) * r, 0, rng.uniform(6.0, 10.0),
+               bark, shade(moss, rng.uniform(0.85, 1.15)), rng)
+    if besieged:
+        _blight(b, rng, 22, Vec4(0.40, 0.34, 0.24, 1))
+
+
+# --- Melody (Musa) ---------------------------------------------------------
+def _build_melody(b: WorldBuilder, besieged: bool = False) -> None:
+    """The realm of music: a valley built as one enormous instrument."""
+    rng = random.Random(233)
+    stone = Vec4(0.86, 0.74, 0.70, 1)
+    lacquer = Vec4(0.80, 0.24, 0.28, 1)
+    gold = Vec4(0.92, 0.76, 0.36, 1)
+    jade = Vec4(0.42, 0.68, 0.60, 1)
+    if besieged:
+        stone = Vec4(0.56, 0.50, 0.48, 1)
+        lacquer = Vec4(0.46, 0.18, 0.20, 1)
+        gold = Vec4(0.58, 0.50, 0.30, 1)
+        jade = Vec4(0.30, 0.42, 0.38, 1)
+
+    b.mesh.grid_ground(190, 190, shade(stone, 0.86), shade(stone, 0.80),
+                       step=12.0)
+    b.clip((0, 0, -2.0), (230, 230, 4.0))
+    b.bounds(78, 78)
+
+    # Concentric amphitheatre steps down to a central stage.
+    for i, r in enumerate((40.0, 33.0, 26.0, 19.0)):
+        segs = 30
+        for k in range(segs):
+            a = math.tau * k / segs
+            x, y = math.cos(a) * r, math.sin(a) * r
+            if _in_approach(x, y, 10.0):
+                continue          # the entrance aisle down to the stage
+            b.solid((x, y, 0.7 + (3 - i) * 1.5),
+                    (7.0, 7.0, 1.4 + (3 - i) * 1.5),
+                    shade(stone, 0.88 + i * 0.05))
+    b.mesh.grid_ground(26, 26, shade(lacquer, 1.05), shade(lacquer, 0.94),
+                       step=6.5, center=(0, 0, 0.10))
+
+    # Giant drums around the stage - solid, and you can stand on them.
+    for i in range(6):
+        a = math.tau * i / 6
+        x, y = math.cos(a) * 13.0, math.sin(a) * 13.0
+        h = rng.uniform(3.0, 5.0)
+        b.mesh.cylinder((x, y, 0), 2.6, 2.6, h, lacquer, segments=12,
+                        top_color=Vec4(0.94, 0.90, 0.82, 1))
+        for k in range(8):
+            ka = math.tau * k / 8
+            b.decor().sphere((x + math.cos(ka) * 2.6, y + math.sin(ka) * 2.6,
+                              h * 0.5), 0.28, gold, segments=6, rings=5)
+        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(2.6, 2.6, h * 0.5)))
+
+    # A harp frame at the back of the valley: strings you can fly between.
+    b.solid((0, 46, 14.0), (3.2, 3.2, 28.0), lacquer)
+    b.solid((-22, 46, 9.0), (3.2, 3.2, 18.0), lacquer)
+    b.solid((-11, 46, 27.0), (25, 3.0, 3.0), gold)
+    for k in range(10):
+        sx = -20.5 + k * 2.0
+        b.decor().cylinder((sx, 46, 1.0), 0.10, 0.10, 24.0 - k * 1.6,
+                           Vec4(0.95, 0.92, 0.80, 1), segments=4)
+    # ...and a rank of organ pipes along the east wall, clear of the aisle.
+    for k in range(12):
+        py = -13.0 + k * 2.4
+        h = 10.0 + abs(6 - k) * 2.2
+        b.solid((46, py, h * 0.5), (2.0, 2.0, h), shade(gold, 0.95))
+
+    # Pagoda pavilions on the ridge - Melody's architecture.
+    for i in range(5):
+        a = math.tau * i / 5 + 0.6
+        x, y = math.cos(a) * 58.0, math.sin(a) * 58.0
+        if _in_approach(x, y, 12.0):
+            continue
+        b.solid((x, y, 4.0), (14, 14, 8.0), stone, shade(stone, 1.06))
+        for k in range(3):
+            b.mesh.cylinder((x, y, 8.0 + k * 3.2), 11.0 - k * 2.6, 0.2,
+                            2.0, shade(lacquer, 0.95 + 0.08 * k), segments=4)
+        b.decor().cylinder((x, y, 17.0), 0.5, 0.0, 3.0, gold, segments=6)
+
+    # Floating gongs - the platforms for this level.
+    for i in range(6):
+        a = math.tau * i / 6 + 0.3
+        x, y = math.cos(a) * 30.0, math.sin(a) * 30.0
+        z = 11.0 + (i % 3) * 4.0
+        b.solid((x, y, z), (9, 9, 0.8), gold, shade(gold, 1.2))
+        b.decor().cylinder((x, y, z + 0.5), 3.2, 3.0, 0.4, shade(jade, 1.1),
+                           segments=14)
+    if besieged:
+        _blight(b, rng, 22, stone)
+
+
+# --- Zenith (Tecna) --------------------------------------------------------
+def _build_zenith(b: WorldBuilder, besieged: bool = False) -> None:
+    """The technological realm: everything on a grid, nothing organic."""
+    rng = random.Random(241)
+    board = Vec4(0.13, 0.20, 0.24, 1)
+    board_b = Vec4(0.10, 0.16, 0.20, 1)
+    trace = Vec4(0.25, 0.90, 0.85, 1)
+    plate = Vec4(0.42, 0.48, 0.55, 1)
+    if besieged:
+        trace = Vec4(0.90, 0.45, 0.25, 1)     # every indicator gone to alarm
+        board = Vec4(0.18, 0.16, 0.16, 1)
+        board_b = Vec4(0.14, 0.12, 0.12, 1)
+
+    b.mesh.grid_ground(190, 190, board, board_b, step=8.0)
+    b.clip((0, 0, -2.0), (230, 230, 4.0))
+    b.bounds(78, 78)
+
+    # Circuit traces etched across the floor.
+    for i in range(26):
+        if i % 2:
+            x = rng.uniform(-70, 70)
+            b.decor().box((x, 0, 0.10), (0.9, 150, 0.06), trace)
+            b.decor().sphere((x, rng.uniform(-60, 60), 0.30), 0.7, trace,
+                             segments=6, rings=5, squash=0.35)
+        else:
+            y = rng.uniform(-70, 70)
+            b.decor().box((0, y, 0.10), (150, 0.9, 0.06), trace)
+            b.decor().sphere((rng.uniform(-60, 60), y, 0.30), 0.7, trace,
+                             segments=6, rings=5, squash=0.35)
+
+    # The data core: stacked hexagonal drums at the centre.
+    for i, (r, h) in enumerate(((14.0, 2.0), (11.0, 2.0), (8.0, 2.0))):
+        b.mesh.cylinder((0, 0, i * 2.0), r, r * 0.92, h, plate, segments=6,
+                        top_color=shade(plate, 1.15))
+        b.boxes.append((Vec3(0, 0, i * 2.0 + h * 0.5), Vec3(r, r, h * 0.5)))
+    b.decor().cylinder((0, 0, 6.0), 5.0, 3.0, 14.0,
+                       Vec4(trace[0], trace[1], trace[2], 1), segments=6)
+    b.glass().cylinder((0, 0, 6.0), 7.0, 5.0, 16.0,
+                       Vec4(trace[0], trace[1], trace[2], 0.28), segments=10,
+                       cap_top=False, cap_bottom=False)
+
+    # Server towers on the grid, lit down one face.
+    for i in range(12):
+        a = math.tau * i / 12
+        r = 30.0 + (i % 3) * 9.0
+        x, y = math.cos(a) * r, math.sin(a) * r
+        if _in_approach(x, y, 10.0):
+            continue
+        h = rng.uniform(14.0, 30.0)
+        b.solid((x, y, h * 0.5), (7, 7, h), plate, shade(plate, 1.2))
+        for k in range(int(h // 3)):
+            b.decor().box((x, y - 3.6, 2.0 + k * 3.0), (4.2, 0.3, 0.9), trace)
+
+    # Floating hexagonal pads, arranged as a lattice to fly through.
+    for ring, (rr, zz) in enumerate(((20.0, 9.0), (30.0, 15.0), (40.0, 21.0))):
+        for i in range(6):
+            a = math.tau * i / 6 + ring * 0.5
+            x, y = math.cos(a) * rr, math.sin(a) * rr
+            b.solid((x, y, zz), (9, 9, 1.0), plate, trace)
+            b.decor().cylinder((x, y, zz - 0.6), 3.2, 2.6, -2.4,
+                               shade(plate, 0.8), segments=6)
+
+    # Antenna masts on the perimeter.
+    for i in range(8):
+        a = math.tau * i / 8 + 0.4
+        x, y = math.cos(a) * 62.0, math.sin(a) * 62.0
+        b.mesh.cylinder((x, y, 0), 0.9, 0.35, 26.0, plate, segments=6)
+        b.decor().sphere((x, y, 27.0), 1.2, trace, segments=7, rings=5)
+        b.boxes.append((Vec3(x, y, 13.0), Vec3(1.0, 1.0, 13.0)))
+    if besieged:
+        _blight(b, rng, 22, plate)
+
+
+# --- Andros (Aisha) --------------------------------------------------------
+def _build_andros(b: WorldBuilder, besieged: bool = False) -> None:
+    """An ocean realm: causeways and coral over open water."""
+    rng = random.Random(251)
+    sea = Vec4(0.16, 0.42, 0.58, 1)
+    sea_b = Vec4(0.13, 0.36, 0.52, 1)
+    coral = [Vec4(0.95, 0.48, 0.55, 1), Vec4(0.98, 0.68, 0.35, 1),
+             Vec4(0.55, 0.85, 0.80, 1), Vec4(0.72, 0.55, 0.92, 1)]
+    stone = Vec4(0.74, 0.78, 0.78, 1)
+    if besieged:
+        sea = Vec4(0.18, 0.26, 0.30, 1)
+        sea_b = Vec4(0.14, 0.22, 0.26, 1)
+        coral = [shade(c, 0.45) for c in coral]
+        stone = Vec4(0.52, 0.52, 0.50, 1)
+
+    # The sea is the floor: solid enough to stand on, visually translucent.
+    b.mesh.grid_ground(200, 200, sea, sea_b, step=13.0)
+    b.clip((0, 0, -2.0), (240, 240, 4.0))
+    b.bounds(82, 82)
+    b.glass().grid_ground(200, 200, Vec4(0.30, 0.62, 0.82, 0.42),
+                          Vec4(0.24, 0.55, 0.78, 0.42), step=13.0,
+                          center=(0, 0, 0.45))
+
+    # The island city: a ringed platform reached by four causeways.
+    for i, r in enumerate((22.0, 17.0, 12.0)):
+        b.solid((0, 0, 0.8 + i * 1.5), (r * 2, r * 2, 1.5),
+                shade(stone, 0.94 + i * 0.05))
+    for i in range(4):
+        a = math.tau * i / 4
+        for k in range(9):
+            rr = 24.0 + k * 5.0
+            b.solid((math.cos(a) * rr, math.sin(a) * rr, 0.8),
+                    (7.0, 7.0, 1.4), shade(stone, 0.90))
+    # Domed halls on the island.
+    for i in range(5):
+        a = math.tau * i / 5 + 0.3
+        x, y = math.cos(a) * 8.0, math.sin(a) * 8.0
+        b.mesh.cylinder((x, y, 4.3), 3.2, 3.0, 4.5, stone, segments=10)
+        b.mesh.sphere((x, y, 9.2), 3.3, shade(Vec4(0.40, 0.72, 0.85, 1), 1.0),
+                      segments=11, rings=7, squash=0.72)
+        b.boxes.append((Vec3(x, y, 6.5), Vec3(3.2, 3.2, 3.0)))
+
+    # Coral towers rising out of the water - cover and platforms.
+    for i in range(20):
+        a = math.tau * i / 20 + rng.uniform(-0.12, 0.12)
+        r = rng.uniform(30, 68)
+        x, y = math.cos(a) * r, math.sin(a) * r
+        if _in_approach(x, y, 10.0):
+            continue
+        h = rng.uniform(6.0, 20.0)
+        col = coral[i % len(coral)]
+        b.mesh.cylinder((x, y, 0), 3.0, 1.8, h, col, segments=9)
+        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(2.6, 2.6, h * 0.5)))
+        for k in range(rng.randint(2, 4)):
+            ka = rng.uniform(0, math.tau)
+            bz = h * rng.uniform(0.45, 0.9)
+            b.mesh.cylinder((x + math.cos(ka) * 1.4, y + math.sin(ka) * 1.4, bz),
+                            1.2, 0.4, rng.uniform(2.5, 5.0), shade(col, 1.12),
+                            segments=7)
+        if h > 11.0:
+            b.solid((x, y, h), (7, 7, 0.9), shade(col, 1.2),
+                    Vec4(0.85, 0.95, 0.95, 1))
+
+    # Standing waves, frozen mid-curl - Aisha's element, made into terrain.
+    for i in range(9):
+        a = math.tau * i / 9 + 0.25
+        x, y = math.cos(a) * 46.0, math.sin(a) * 46.0
+        for k in range(4):
+            b.glass().sphere((x + k * 1.2, y, 1.0 + k * 1.6),
+                             4.2 - k * 0.7,
+                             Vec4(0.45, 0.80, 0.95, 0.45), segments=9, rings=6,
+                             squash=0.55)
+    if besieged:
+        _blight(b, rng, 20, stone, radius=(24, 66))
+
+
+# --- Home-realm level definitions ------------------------------------------
+def _home(key, name, subtitle, builder, sky, fog, sun, ambient, start, portal,
+          gem_name, gems, hearts, enemies, gem_goal, besieged=False) -> Level:
+    return Level(key=key, name=name, subtitle=subtitle,
+                 sky=sky, fog=fog, sun=sun, ambient=ambient,
+                 start=start, portal=portal,
+                 build=(lambda b, _f=builder: _f(b, besieged)),
+                 gem_name=gem_name, gems=gems, hearts=hearts,
+                 enemies=enemies, gem_goal=gem_goal)
+
+
+# Peacetime enemy sets are light: these chapters introduce a realm.  The
+# besieged versions field the Army of Decay and a Trix.
+def _home_pair(fairy, name, builder, gem_name, palette, layout, boss) -> tuple:
+    sky, fog, sun, amb = palette["calm"]
+    dsky, dfog, dsun, damb = palette["dark"]
+    start, portal, gems, hearts = layout
+    calm = _home(
+        "home_" + fairy, name, palette["sub_calm"], builder,
+        sky, fog, sun, amb, start, portal, gem_name, gems, hearts,
+        enemies=[Spawn(Vec3(0, 10, 3), "knut")] +
+                [Spawn(p, "ghoul") for p in palette["mobs"]],
+        gem_goal=min(4, len(gems)))
+    siege = _home(
+        "siege_" + fairy, name, palette["sub_dark"], builder,
+        dsky, dfog, dsun, damb, start, portal, gem_name, gems, hearts,
+        enemies=[Spawn(Vec3(0, 14, 11), boss)] +
+                [Spawn(p, "decay") for p in palette["mobs"][:4]] +
+                [Spawn(p, "ghoul") for p in palette["mobs"][4:]],
+        gem_goal=0, besieged=True)
+    return calm, siege
+
+
+_MOBS_WIDE = [Vec3(-18, 4, 3), Vec3(18, 4, 3), Vec3(-12, 24, 3),
+              Vec3(12, 24, 3), Vec3(0, 32, 3), Vec3(-28, -14, 3),
+              Vec3(28, -14, 3)]
+
+HOME_LEVELS = {}
+
+# Bloom - Gardenia Park, Earth (already built above as chapter 1's setting)
+HOME_LEVELS["bloom"] = (
+    _home("home_bloom", "Gardenia Park", "Earth. No magic here. Usually.",
+          _build_gardenia,
+          Vec4(0.56, 0.78, 0.95, 1), Vec4(0.76, 0.87, 0.97, 1),
+          Vec4(1.0, 0.98, 0.92, 1), Vec4(0.58, 0.60, 0.66, 1),
+          Vec3(0, -40, 2.0), Vec3(0, 40, 1.2), "spark",
+          [Vec3(-22, -22, 1.4), Vec3(22, -22, 1.4), Vec3(0, 0, 2.6),
+           Vec3(34, 34, 1.6)],
+          [Vec3(-34, 0, 1.4), Vec3(34, 0, 1.4)],
+          [Spawn(Vec3(0, 8, 2), "knut"),
+           Spawn(Vec3(-16, 2, 2), "ghoul"), Spawn(Vec3(16, 2, 2), "ghoul"),
+           Spawn(Vec3(-10, 20, 2), "ghoul"), Spawn(Vec3(10, 20, 2), "ghoul"),
+           Spawn(Vec3(0, 30, 2), "ghoul")], 0),
+    _home("siege_bloom", "Gardenia Park", "They followed you home.",
+          _build_gardenia,
+          Vec4(0.20, 0.14, 0.18, 1), Vec4(0.32, 0.22, 0.24, 1),
+          Vec4(1.0, 0.70, 0.58, 1), Vec4(0.44, 0.36, 0.40, 1),
+          Vec3(0, -40, 2.0), Vec3(0, 40, 1.2), "spark",
+          [Vec3(-22, -22, 1.4), Vec3(22, -22, 1.4), Vec3(0, 0, 2.6)],
+          [Vec3(-34, 0, 1.4), Vec3(34, 0, 1.4)],
+          [Spawn(Vec3(0, 14, 11), "stormy"),
+           Spawn(Vec3(-18, 4, 2), "decay"), Spawn(Vec3(18, 4, 2), "decay"),
+           Spawn(Vec3(-12, 24, 2), "decay"), Spawn(Vec3(12, 24, 2), "decay"),
+           Spawn(Vec3(0, 32, 2), "ghoul"), Spawn(Vec3(-28, -14, 2), "ghoul"),
+           Spawn(Vec3(28, -14, 2), "ghoul")], 0, besieged=True),
+)
+
+HOME_LEVELS["stella"] = _home_pair(
+    "stella", "Solaria", _build_solaria, "sunstone",
+    {"calm": (Vec4(0.42, 0.68, 0.95, 1), Vec4(0.86, 0.90, 0.98, 1),
+              Vec4(1.0, 0.98, 0.88, 1), Vec4(0.66, 0.66, 0.68, 1)),
+     "dark": (Vec4(0.26, 0.18, 0.22, 1), Vec4(0.40, 0.28, 0.26, 1),
+              Vec4(1.0, 0.74, 0.58, 1), Vec4(0.46, 0.40, 0.42, 1)),
+     "sub_calm": "The Sun Palace. Home, and she is late again.",
+     "sub_dark": "They put out the sun.",
+     "mobs": _MOBS_WIDE},
+    layout=(Vec3(0, -46, 2.0), Vec3(0, 30, 1.4),
+            [Vec3(-19.0, 11.0, 15.0), Vec3(19.0, 11.0, 19.0),
+             Vec3(-19.0, -11.0, 19.0), Vec3(19.0, -11.0, 15.0),
+             Vec3(0, 22, 15.0), Vec3(0, -22, 19.0)],
+            [Vec3(-30, -30, 1.6), Vec3(30, -30, 1.6)]),
+    boss="stormy")
+
+HOME_LEVELS["flora"] = _home_pair(
+    "flora", "Lynphea", _build_lynphea, "seed",
+    {"calm": (Vec4(0.52, 0.76, 0.86, 1), Vec4(0.74, 0.88, 0.84, 1),
+              Vec4(1.0, 0.98, 0.86, 1), Vec4(0.58, 0.62, 0.58, 1)),
+     "dark": (Vec4(0.20, 0.20, 0.14, 1), Vec4(0.30, 0.30, 0.20, 1),
+              Vec4(0.92, 0.86, 0.60, 1), Vec4(0.42, 0.42, 0.34, 1)),
+     "sub_calm": "Everything here grew past its own scale.",
+     "sub_dark": "The Army of Decay is in the grove.",
+     "mobs": _MOBS_WIDE},
+    layout=(Vec3(0, -50, 2.0), Vec3(0, 0, 18.4),
+            [Vec3(-30.0, 12.0, 13.0), Vec3(30.0, 12.0, 17.0),
+             Vec3(-24.0, -30.0, 11.0), Vec3(24.0, -30.0, 15.0),
+             Vec3(0, 36, 13.0), Vec3(0, -36, 11.0)],
+            [Vec3(-40, -40, 1.6), Vec3(40, -40, 1.6)]),
+    boss="darcy")
+
+HOME_LEVELS["musa"] = _home_pair(
+    "musa", "Melody", _build_melody, "note",
+    {"calm": (Vec4(0.86, 0.60, 0.58, 1), Vec4(0.92, 0.78, 0.72, 1),
+              Vec4(1.0, 0.92, 0.82, 1), Vec4(0.62, 0.56, 0.56, 1)),
+     "dark": (Vec4(0.22, 0.14, 0.18, 1), Vec4(0.34, 0.22, 0.26, 1),
+              Vec4(0.96, 0.70, 0.70, 1), Vec4(0.44, 0.36, 0.40, 1)),
+     "sub_calm": "The whole valley is built to be played.",
+     "sub_dark": "Every string in the valley has been cut.",
+     "mobs": _MOBS_WIDE},
+    layout=(Vec3(0, -52, 2.0), Vec3(0, 0, 1.0),
+            [Vec3(-30.0, 0.0, 13.0), Vec3(15.0, 26.0, 17.0),
+             Vec3(-15.0, 26.0, 13.0), Vec3(15.0, -26.0, 15.0),
+             Vec3(-15.0, -26.0, 19.0), Vec3(30.0, 0.0, 15.0)],
+            [Vec3(-44, -20, 6.0), Vec3(44, -20, 6.0)]),
+    boss="icy")
+
+HOME_LEVELS["tecna"] = _home_pair(
+    "tecna", "Zenith", _build_zenith, "data node",
+    {"calm": (Vec4(0.10, 0.16, 0.22, 1), Vec4(0.16, 0.26, 0.32, 1),
+              Vec4(0.80, 0.94, 1.0, 1), Vec4(0.44, 0.52, 0.56, 1)),
+     "dark": (Vec4(0.20, 0.11, 0.09, 1), Vec4(0.30, 0.18, 0.14, 1),
+              Vec4(1.0, 0.76, 0.60, 1), Vec4(0.46, 0.38, 0.36, 1)),
+     "sub_calm": "Zenith. Everything measured, everything on a grid.",
+     "sub_dark": "Every system in the realm is reading red.",
+     "mobs": _MOBS_WIDE},
+    layout=(Vec3(0, -50, 2.0), Vec3(0, 0, 7.0),
+            [Vec3(20.0, 0.0, 10.5), Vec3(-10.0, 17.3, 10.5),
+             Vec3(-10.0, -17.3, 10.5), Vec3(0.0, 30.0, 16.5),
+             Vec3(-26.0, -15.0, 16.5), Vec3(26.0, -15.0, 16.5)],
+            [Vec3(-40, -40, 1.6), Vec3(40, -40, 1.6)]),
+    boss="darcy")
+
+HOME_LEVELS["aisha"] = _home_pair(
+    "aisha", "Andros", _build_andros, "pearl",
+    {"calm": (Vec4(0.36, 0.66, 0.86, 1), Vec4(0.66, 0.84, 0.92, 1),
+              Vec4(1.0, 0.98, 0.92, 1), Vec4(0.58, 0.64, 0.68, 1)),
+     "dark": (Vec4(0.14, 0.18, 0.24, 1), Vec4(0.22, 0.28, 0.32, 1),
+              Vec4(0.82, 0.88, 1.0, 1), Vec4(0.40, 0.44, 0.48, 1)),
+     "sub_calm": "Andros. Nine tenths of it is water.",
+     "sub_dark": "Something has poisoned the sea.",
+     "mobs": _MOBS_WIDE},
+    layout=(Vec3(0, -56, 2.0), Vec3(0, 0, 5.2),
+            [Vec3(-44.0, 12.0, 13.0), Vec3(44.0, 12.0, 13.0),
+             Vec3(-30.0, -38.0, 13.0), Vec3(30.0, -38.0, 13.0),
+             Vec3(0.0, 48.0, 13.0), Vec3(0, 0, 6.0)],
+            [Vec3(-36, 36, 2.4), Vec3(36, 36, 2.4)]),
+    boss="icy")
+
+
+# ---------------------------------------------------------------------------
+# The campaign
+# ---------------------------------------------------------------------------
+# "home" and "siege" are filled in from the chosen fairy's realm; everything
+# else is the shared Season 1 arc.
+CAMPAIGN_TEMPLATE = ["home", "alfea", "swamp", "cloudtower", "roccaluce",
+                     "redfountain", "pixievillage", "siege",
+                     "siege_cloudtower", "battle_alfea"]
+
+SHARED_LEVELS = {lv.key: lv for lv in (
+    LEVEL_ALFEA, LEVEL_SWAMP, LEVEL_CLOUDTOWER, LEVEL_ROCCALUCE,
+    LEVEL_REDFOUNTAIN, LEVEL_PIXIEVILLAGE, LEVEL_SIEGE_CLOUDTOWER,
+    LEVEL_BATTLE_ALFEA)}
+
+CAMPAIGN_LENGTH = len(CAMPAIGN_TEMPLATE)
+
+
+def campaign_for(fairy_key: str) -> list:
+    """The ten chapters this fairy plays, with her own realm in slots 1 and 8."""
+    home, siege = HOME_LEVELS.get(fairy_key, HOME_LEVELS["bloom"])
+    out = []
+    for slot in CAMPAIGN_TEMPLATE:
+        if slot == "home":
+            out.append(home)
+        elif slot == "siege":
+            out.append(siege)
+        else:
+            out.append(SHARED_LEVELS[slot])
+    return out

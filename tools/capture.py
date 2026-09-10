@@ -54,35 +54,55 @@ def main():
     step(20)
     shot("02-character-select")
 
-    game.select_index = 0
-    game._refresh_select()
-    game.on_confirm()
-    step(4)
-    shot("03-story-chapter1")          # chapter dialogue over the world
+    from winx3d import characters
 
     def play():
         n = 0
-        while game.state == "story" and n < 60:
+        while game.state == "story" and n < 80:
             game.on_confirm()
             n += 1
         step(6)
 
-    play()
-    p = game.player
-    p.root.setPos(0, -34, 1.0)
-    p.cam_yaw, p.cam_pitch = 0.0, -6.0
-    step(30)
-    shot("04-gardenia-park")
+    game.select_index = 0
+    game._refresh_select()
+    game.on_confirm()
+    step(4)
+    shot("03-story-chapter1")
 
+    # One shot of every fairy's home realm, at peace and besieged.
+    homes = [
+        ("bloom",  (0, -34, 1.0),  0.0, -6.0),
+        ("stella", (0, -40, 1.0),  0.0, -4.0),
+        ("flora",  (0, -42, 1.0),  0.0, -2.0),
+        ("musa",   (0, -46, 1.0),  0.0, -3.0),
+        ("tecna",  (0, -42, 1.0),  0.0, -2.0),
+        ("aisha",  (0, -48, 1.0),  0.0, -3.0),
+    ]
+    for i, (key, pos, yaw, pitch) in enumerate(homes):
+        f = characters.BY_KEY[key]
+        for slot, tag in ((0, "home"), (7, "siege")):
+            game.start_run(f) if slot == 0 else game.load_level(slot)
+            play()
+            p = game.player
+            p.root.setPos(*pos)
+            p.cam_yaw, p.cam_pitch = yaw, pitch
+            p.magic = 100.0
+            step(30)
+            shot("%02d-%s-%s" % (4 + i * 2 + (1 if tag == "siege" else 0),
+                                 key, tag))
+
+    # The shared chapters.
+    game.start_run(characters.BY_KEY["bloom"])
+    play()
     views = [
-        ("05-alfea-college",      1, (0, -26, 0.0),  0.0,  -8.0),
-        ("06-black-mud-swamp",    2, (0, -30, 1.0),  0.0,  -5.0),
-        ("07-cloud-tower",        3, (0, -34, 2.0),  0.0,   0.0),
-        ("08-lake-roccaluce",     4, (0, -34, 2.0),  0.0,  -3.0),
-        ("09-red-fountain",       5, (0, -34, 2.0),  0.0,  -2.0),
-        ("10-pixie-village",      6, (0, -34, 2.0),  0.0,  -4.0),
-        ("11-cloud-tower-fallen", 7, (0, -34, 2.0),  0.0,   0.0),
-        ("12-battle-of-alfea",    8, (0, -30, 1.0),  0.0,  -4.0),
+        ("16-alfea-college",      1, (0, -26, 0.0),  0.0,  -8.0),
+        ("17-black-mud-swamp",    2, (0, -30, 1.0),  0.0,  -5.0),
+        ("18-cloud-tower",        3, (0, -34, 2.0),  0.0,   0.0),
+        ("19-lake-roccaluce",     4, (0, -34, 2.0),  0.0,  -3.0),
+        ("20-red-fountain",       5, (0, -34, 2.0),  0.0,  -2.0),
+        ("21-pixie-village",      6, (0, -34, 2.0),  0.0,  -4.0),
+        ("22-cloud-tower-fallen", 8, (0, -34, 2.0),  0.0,   0.0),
+        ("23-battle-of-alfea",    9, (0, -30, 1.0),  0.0,  -4.0),
     ]
     for name, idx, pos, yaw, pitch in views:
         game.load_level(idx)

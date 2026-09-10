@@ -104,7 +104,8 @@ class Chapter:
 
 CHAPTERS = {
 
-    "gardenia": Chapter(
+    # --- Chapter 1 is Bloom's; the other fairies get their own realm below --
+    "home_bloom": Chapter(
         1, "The Ogre in the Park", "earth",
         objective="Drive Knut and his ghouls out of Gardenia Park.",
         intro=[
@@ -254,7 +255,7 @@ CHAPTERS = {
         ]),
 
     "siege_cloudtower": Chapter(
-        8, "Cloud Tower Has Fallen", "magix",
+        9, "Cloud Tower Has Fallen", "magix",
         objective="Cut through the Army of Decay and reach Darcy.",
         intro=[
             ("griffin", "They took my school in a single night. My witches "
@@ -274,7 +275,7 @@ CHAPTERS = {
         ]),
 
     "battle_alfea": Chapter(
-        9, "The Battle of Alfea", "magix",
+        10, "The Battle of Alfea", "magix",
         objective="Hold the courtyard, then finish the Trix.",
         intro=[
             ("narrator", "The Army of Decay reached Alfea's barrier at dawn "
@@ -298,10 +299,207 @@ CHAPTERS = {
 }
 
 
-# The order chapters are played in.  Level keys match these exactly.
-CAMPAIGN = ["gardenia", "alfea", "swamp", "cloudtower", "roccaluce",
-            "redfountain", "pixievillage", "siege_cloudtower",
-            "battle_alfea"]
+# ---------------------------------------------------------------------------
+# Home realms - chapters 1 and 8 change with the fairy you picked
+# ---------------------------------------------------------------------------
+# Each fairy opens the game in her own realm and returns to it later, once the
+# Trix have the Codex and start striking the realms directly.
+HOME_CHAPTERS = {
+
+    "stella": (Chapter(
+        1, "The Ring of Solaria", "solaria",
+        objective="Clear the palace grounds. Try not to break anything else.",
+        intro=[
+            ("narrator", "Solaria. A realm with two suns and no night worth "
+                         "the name."),
+            ("stella", "One year at Alfea and I set the potions lab on fire. "
+                       "Father is thrilled."),
+            ("knut", "The Ring of Solaria. Hand it over."),
+            ("stella", "An ogre. In the palace. Somebody is going to hear "
+                       "about this."),
+        ],
+        outro=[
+            ("stella", "He was not here for me. He was here for the ring."),
+            ("narrator", "Someone had sent an ogre across realms for a single "
+                         "piece of jewellery. Stella went back to Alfea early."),
+        ]),
+        Chapter(
+        8, "The Sun Goes Out", "solaria",
+        objective="Get the palace clear before the Decay reaches the city.",
+        intro=[
+            ("stella", "They put out the suns. Both of them."),
+            ("stormy", "Do you like it? Your realm looks so much better in "
+                       "the dark."),
+            ("stella", "That is my home you are standing on."),
+        ],
+        outro=[
+            ("stella", "Solaria will hold. It is going to take years, but it "
+                       "will hold."),
+            ("faragonda", "They are striking the realms one at a time to keep "
+                          "us scattered. Come back to Alfea."),
+        ])),
+
+    "flora": (Chapter(
+        1, "Roots and Thorns", "lynphea",
+        objective="Drive them out of the grove before they reach the heartwood.",
+        intro=[
+            ("narrator", "Lynphea. Everything here grew past the scale it was "
+                         "meant to, and then kept going."),
+            ("flora", "The grove is frightened. I can hear it from here."),
+            ("knut", "Out of the way, flower girl."),
+            ("flora", "No. You are standing on something three thousand years "
+                      "old."),
+        ],
+        outro=[
+            ("flora", "He was digging. Looking for something under the roots."),
+            ("narrator", "Lynphea sent its quietest daughter to Alfea to find "
+                         "out what."),
+        ]),
+        Chapter(
+        8, "The Blight", "lynphea",
+        objective="Burn the rot out of the grove. Save the heartwood.",
+        intro=[
+            ("flora", "The Army of Decay does not kill things. It makes them "
+                      "rot while they are still alive."),
+            ("darcy", "Your whole realm is a garden, Flora. Gardens die."),
+            ("flora", "Not this one. Not today."),
+        ],
+        outro=[
+            ("flora", "The heartwood held. Everything else will grow back "
+                      "from it."),
+            ("faragonda", "They are hitting the realms one at a time. Come "
+                          "back to Alfea, Flora."),
+        ])),
+
+    "musa": (Chapter(
+        1, "The Silent Valley", "melody",
+        objective="Clear the amphitheatre. Melody does not do quiet.",
+        intro=[
+            ("narrator", "Melody. A valley built to be played - drums, "
+                         "strings, and a wind that carries for miles."),
+            ("musa", "It is silent. This valley has never once been silent."),
+            ("knut", "Nobody left to hear you scream, then."),
+            ("musa", "Wrong. Everybody is going to hear this."),
+        ],
+        outro=[
+            ("musa", "Ogres do not walk into Melody on their own."),
+            ("narrator", "She left for Alfea the same week, and did not say "
+                         "goodbye to anyone."),
+        ]),
+        Chapter(
+        8, "Every String Cut", "melody",
+        objective="Take the valley back, one stage at a time.",
+        intro=[
+            ("musa", "They cut every string in the valley. Every single one."),
+            ("icy", "It was giving me a headache."),
+            ("musa", "You have no idea what you just took from me."),
+        ],
+        outro=[
+            ("musa", "It will play again. It takes more than three witches to "
+                     "shut this valley up."),
+            ("faragonda", "One realm at a time, to keep us apart. Come home to "
+                          "Alfea."),
+        ])),
+
+    "tecna": (Chapter(
+        1, "System Fault", "zenith",
+        objective="Trace the intrusion to its source and remove it.",
+        intro=[
+            ("narrator", "Zenith. Everything measured, everything on a grid, "
+                         "nothing left to chance."),
+            ("tecna", "An unlogged intrusion. On Zenith that is not a fault, "
+                      "it is an impossibility."),
+            ("knut", "Stop making that noise and stand still."),
+            ("tecna", "Fascinating. An ogre that has defeated a realm-wide "
+                      "sensor grid. That should not be possible either."),
+        ],
+        outro=[
+            ("tecna", "Someone routed him past every sensor we have. Someone "
+                      "with resources."),
+            ("narrator", "Zenith does not like unsolved problems. It sent one "
+                         "of its best to Alfea to solve this one."),
+        ]),
+        Chapter(
+        8, "All Systems Red", "zenith",
+        objective="Restore the core before the realm goes dark.",
+        intro=[
+            ("tecna", "Every indicator in the realm is reading red. That is "
+                      "not an alarm state - there is no state past this one."),
+            ("darcy", "I do love a realm that tells you exactly how badly it "
+                      "is doing."),
+            ("tecna", "Then let me be precise: you are outnumbered."),
+        ],
+        outro=[
+            ("tecna", "Core stable. Losses recoverable. Barely."),
+            ("faragonda", "They are picking off the realms in sequence. Come "
+                          "back to Alfea."),
+        ])),
+
+    "aisha": (Chapter(
+        1, "The Tide Turns", "andros",
+        objective="Clear the causeways and get the city sealed.",
+        intro=[
+            ("narrator", "Andros. Nine tenths water, and the tenth that is "
+                         "not is mostly bridges."),
+            ("aisha", "Something came out of the deep water last night."),
+            ("knut", "Little princess. All alone on a very long bridge."),
+            ("aisha", "You picked the wrong realm to fight on."),
+        ],
+        outro=[
+            ("aisha", "It came from outside Andros. Somebody sent it."),
+            ("narrator", "Andros sent its princess to Alfea to find out who."),
+        ]),
+        Chapter(
+        8, "Poisoned Water", "andros",
+        objective="Clear the sea before the rot reaches the city.",
+        intro=[
+            ("aisha", "They put the Army of Decay in the water. In the water."),
+            ("icy", "It spreads so nicely that way. Everything here is "
+                    "connected."),
+            ("aisha", "Then so am I. To all of it."),
+        ],
+        outro=[
+            ("aisha", "The tide will carry the rest of it out. Andros holds."),
+            ("faragonda", "Realm by realm, to keep us scattered. Come back to "
+                          "Alfea."),
+        ])),
+}
+
+# Bloom's home chapters are the Gardenia ones defined above, plus this siege.
+CHAPTERS["siege_bloom"] = Chapter(
+    8, "They Followed You Home", "earth",
+    objective="Get Gardenia clear. Nobody here can fight this.",
+    intro=[
+        ("narrator", "Gardenia. No barrier, no fairies, no idea what is "
+                     "coming down the street."),
+        ("bloom", "This is where I grew up. There are people asleep in those "
+                  "houses."),
+        ("stormy", "Then wake them up. I want an audience."),
+    ],
+    outro=[
+        ("bloom", "They came here because of me."),
+        ("faragonda", "They came because they are taking the realms one at a "
+                      "time. Gardenia was simply first. Come back to Alfea."),
+    ])
+
+HOME_CHAPTERS["bloom"] = (CHAPTERS["home_bloom"], CHAPTERS["siege_bloom"])
+for _key, (_calm, _siege) in HOME_CHAPTERS.items():
+    CHAPTERS.setdefault("home_" + _key, _calm)
+    CHAPTERS.setdefault("siege_" + _key, _siege)
+
+
+# The shared chapters, in the order they are played.  Slots 1 and 8 come from
+# HOME_CHAPTERS and depend on the chosen fairy.
+CAMPAIGN_TEMPLATE = ["home", "alfea", "swamp", "cloudtower", "roccaluce",
+                     "redfountain", "pixievillage", "siege",
+                     "siege_cloudtower", "battle_alfea"]
+
+
+def campaign_keys(fairy_key: str) -> list:
+    """Level/chapter keys for this fairy's run, in order."""
+    return [("home_" + fairy_key) if s == "home" else
+            ("siege_" + fairy_key) if s == "siege" else s
+            for s in CAMPAIGN_TEMPLATE]
 
 
 def chapter_for(level_key: str) -> Chapter | None:

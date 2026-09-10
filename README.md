@@ -7,7 +7,7 @@ Konami *Winx Club* PC game, and following the story of the original series'
 It runs on **Windows, macOS and Linux**, and it is deliberately built to run on
 *old* hardware — the same class of machine the original shipped on.
 
-![Gardenia Park](screenshots/04-gardenia-park.png)
+![Solaria](screenshots/06-stella-home.png)
 
 ---
 
@@ -65,55 +65,79 @@ fights. Magic bolts softly lock on to the nearest enemy in front of you.
 
 ## The story
 
-The campaign retells Season 1 across nine chapters, each opening and closing
+The campaign retells Season 1 across ten chapters, each opening and closing
 with dialogue from the characters involved.
 
 ![Chapter dialogue](screenshots/03-story-chapter1.png)
 
+**Chapters 1 and 8 change with the fairy you pick** — they are set in *her*
+realm, first at peace and later under attack. The eight chapters between and
+after them are the shared Season 1 arc.
+
 | # | Chapter | Location | Boss |
 | - | ------- | -------- | ---- |
-| 1 | The Ogre in the Park | Gardenia Park, Earth | Knut |
+| 1 | *her own realm* | *see below* | Knut |
 | 2 | College for Fairies | Alfea | — |
 | 3 | Black Mud Swamp | Knut's hideout | Knut |
 | 4 | The Book of Fate | Cloud Tower | Darcy |
 | 5 | Lake Roccaluce | The frozen lake | Icy |
 | 6 | Red Fountain | School of Heroics and Bravery | Stormy |
 | 7 | Pixie Village | The great tree | Darcy |
-| 8 | Cloud Tower Has Fallen | Cloud Tower, occupied | Icy |
-| 9 | The Battle of Alfea | Alfea, besieged | Icy, Darcy **and** Stormy |
+| 8 | *her realm, besieged* | *see below* | a Trix |
+| 9 | Cloud Tower Has Fallen | Cloud Tower, occupied | Icy |
+| 10 | The Battle of Alfea | Alfea, besieged | Icy, Darcy **and** Stormy |
 
-Running through it: Bloom discovers her magic on Earth and is brought to
-Alfea; the Winx track Knut to the swamp and meet the Trix; Bloom reads her own
-page in Cloud Tower's Book of Fate; Daphne tells her at Lake Roccaluce that she
-is the last of Domino and carries the Dragon Flame; the Trix take all four
-pieces of the **Codex** — from Alfea, Cloud Tower, Red Fountain and Pixie
-Village — open the Realix dimension, and come back with the Army of Decay.
+Running through it: the fairy is drawn into the war when an ogre turns up in
+her home realm; at Alfea the Winx track Knut to the swamp and meet the Trix;
+Bloom reads her own page in Cloud Tower's Book of Fate; Daphne tells her at
+Lake Roccaluce that she is the last of Domino and carries the Dragon Flame.
+The Trix take all four pieces of the **Codex** — from Alfea, Cloud Tower, Red
+Fountain and Pixie Village — open the Realix dimension, and come back with the
+Army of Decay, which they turn on the realms one at a time.
 
-![Lake Roccaluce](screenshots/08-lake-roccaluce.png)
-![Pixie Village](screenshots/10-pixie-village.png)
-![The Battle of Alfea](screenshots/12-battle-of-alfea.png)
+![Lake Roccaluce](screenshots/19-lake-roccaluce.png)
+![Pixie Village](screenshots/21-pixie-village.png)
+![The Battle of Alfea](screenshots/23-battle-of-alfea.png)
 
-## The fairies
+## The fairies, and their realms
 
-Six playable fairies, each with her own realm, stats and bolt pattern — Flora
-fires two bolts in an arc, Tecna a three-way spread, Aisha hits hardest, Musa
-is quickest.
+Six playable fairies. Each has her own realm, her own two chapters, her own
+signature spell, and her own stats and bolt pattern — Flora fires two bolts in
+an arc, Tecna a three-way spread, Aisha hits hardest, Musa is quickest.
 
-| Fairy | Realm | Signature spell |
-| ----- | ----- | --------------- |
-| Bloom | Domino | Dragon Flame |
-| Stella | Solaria | Solar Flare |
-| Flora | Lynphea | Summer Blossom |
-| Musa | Melody | Sonic Blast |
-| Tecna | Zenith | Firewall |
-| Aisha | Andros | Morphix Wave |
+| Fairy | Realm | Chapter 1 | Chapter 8 | Signature spell |
+| ----- | ----- | --------- | --------- | --------------- |
+| Bloom | Earth (born on Domino) | The Ogre in the Park | They Followed You Home | Dragon Flame |
+| Stella | Solaria | The Ring of Solaria | The Sun Goes Out | Solar Flare |
+| Flora | Lynphea | Roots and Thorns | The Blight | Summer Blossom |
+| Musa | Melody | The Silent Valley | Every String Cut | Sonic Blast |
+| Tecna | Zenith | System Fault | All Systems Red | Firewall |
+| Aisha | Andros | The Tide Turns | Poisoned Water | Morphix Wave |
+
+Bloom is the exception: born on Domino, but raised in Gardenia on Earth, so
+her chapters are set there — which is the premise the first season turns on.
+
+Each realm is a distinct place, not a reskin: Solaria's marble plaza under two
+suns, Lynphea's flowers grown taller than buildings, Melody's valley built as
+one enormous instrument, Zenith's circuit-board grid, Andros' causeways over
+open sea. Chapter 8 revisits the same realm after the Army of Decay has been
+through it.
+
+| | |
+| :-: | :-: |
+| ![Solaria](screenshots/06-stella-home.png) | ![Lynphea](screenshots/08-flora-home.png) |
+| **Solaria** — Stella | **Lynphea** — Flora |
+| ![Melody](screenshots/10-musa-home.png) | ![Zenith](screenshots/12-tecna-home.png) |
+| **Melody** — Musa | **Zenith** — Tecna |
+| ![Andros](screenshots/14-aisha-home.png) | ![Zenith besieged](screenshots/13-tecna-siege.png) |
+| **Andros** — Aisha | **Zenith**, after the Army of Decay |
 
 Fill the magic meter and press `F` to cast your fairy's **signature spell**:
 for fourteen seconds spells cost nothing, you fire faster, deal 70% more
 damage and take half.
 
 Aisha joins the Winx in their second year, so she is locked until you finish
-the first-year campaign.
+the campaign once.
 
 ![Choose your fairy](screenshots/02-character-select.png)
 
@@ -170,7 +194,7 @@ winx3d/
   geometry.py         Procedural mesh builder (boxes, spheres, cylinders, ...)
   lore.py             Canon: characters, realms, the Codex, the S1 script
   characters.py       The six fairies, their models and the animator
-  world.py            Level geometry, collision boxes, the nine chapters
+  world.py            Level geometry, collision, realms and the campaign
   player.py           Movement, flight, combat, third-person camera
   enemies.py          Ghoul / Wisp / Troll / Decay / Knut / Trix AI
   effects.py          Projectiles, particles, pickups
@@ -193,10 +217,10 @@ The whole game can be played through with no display attached, which is how it
 is tested:
 
 ```sh
-python3 tests/smoke.py      # 76 checks: lore integrity, menus, unlocks, the
-                            # story system, all nine chapters, movement,
-                            # collision, flight, combat, pickups, death,
-                            # portals, the Trix, teardown
+python3 tests/smoke.py      # 103 checks: lore integrity, all six campaigns
+                            # and every home realm, menus, unlocks, the story
+                            # system, movement, collision, flight, combat,
+                            # pickups, death, portals, the Trix, teardown
 python3 tools/capture.py    # regenerate screenshots/
 ```
 
