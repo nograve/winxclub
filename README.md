@@ -1,13 +1,13 @@
 # Winx Club: Magic of Alfea
 
 A 3D third-person action-adventure fan game, built in the spirit of the 2004
-Konami *Winx Club* PC game: pick a fairy, explore an arena, blast monsters with
-magic, fly, transform, and beat the witch at the top.
+Konami *Winx Club* PC game, and following the story of the original series'
+**first season** — from the ogre in Gardenia Park to the Battle of Alfea.
 
 It runs on **Windows, macOS and Linux**, and it is deliberately built to run on
 *old* hardware — the same class of machine the original shipped on.
 
-![Alfea Courtyard](screenshots/03-alfea-courtyard.png)
+![Gardenia Park](screenshots/04-gardenia-park.png)
 
 ---
 
@@ -53,9 +53,9 @@ Run `python3 main.py --help` for every option (`--fullscreen`, `--width`,
 | `Space`                | Jump — **hold in the air to fly**                 |
 | `J` / left mouse       | Magic bolt                                        |
 | `K` / right mouse      | Magic blast (close range, expensive)              |
-| `F`                    | Enchantix, once the magic meter is full           |
+| `F`                    | Signature spell, once the magic meter is full     |
 | `Tab` / `M` / `N`      | Toggle mouse look / music / sound effects         |
-| `Esc`                  | Pause  (`Q` from the pause screen quits to title) |
+| `Esc`                  | Pause, or skip dialogue  (`Q` quits to title)     |
 | `F12`                  | Screenshot                                        |
 
 Flying drains magic, and so does every spell — let the meter refill between
@@ -63,31 +63,67 @@ fights. Magic bolts softly lock on to the nearest enemy in front of you.
 
 ---
 
-## The game
+## The story
 
-**Six playable fairies**, each with different speed, power, magic regeneration
-and bolt pattern — Flora fires two bolts in an arc, Tecna fires a three-way
-spread, Aisha hits hardest, Musa is the quickest.
+The campaign retells Season 1 across nine chapters, each opening and closing
+with dialogue from the characters involved.
+
+![Chapter dialogue](screenshots/03-story-chapter1.png)
+
+| # | Chapter | Location | Boss |
+| - | ------- | -------- | ---- |
+| 1 | The Ogre in the Park | Gardenia Park, Earth | Knut |
+| 2 | College for Fairies | Alfea | — |
+| 3 | Black Mud Swamp | Knut's hideout | Knut |
+| 4 | The Book of Fate | Cloud Tower | Darcy |
+| 5 | Lake Roccaluce | The frozen lake | Icy |
+| 6 | Red Fountain | School of Heroics and Bravery | Stormy |
+| 7 | Pixie Village | The great tree | Darcy |
+| 8 | Cloud Tower Has Fallen | Cloud Tower, occupied | Icy |
+| 9 | The Battle of Alfea | Alfea, besieged | Icy, Darcy **and** Stormy |
+
+Running through it: Bloom discovers her magic on Earth and is brought to
+Alfea; the Winx track Knut to the swamp and meet the Trix; Bloom reads her own
+page in Cloud Tower's Book of Fate; Daphne tells her at Lake Roccaluce that she
+is the last of Domino and carries the Dragon Flame; the Trix take all four
+pieces of the **Codex** — from Alfea, Cloud Tower, Red Fountain and Pixie
+Village — open the Realix dimension, and come back with the Army of Decay.
+
+![Lake Roccaluce](screenshots/08-lake-roccaluce.png)
+![Pixie Village](screenshots/10-pixie-village.png)
+![The Battle of Alfea](screenshots/12-battle-of-alfea.png)
+
+## The fairies
+
+Six playable fairies, each with her own realm, stats and bolt pattern — Flora
+fires two bolts in an arc, Tecna a three-way spread, Aisha hits hardest, Musa
+is quickest.
+
+| Fairy | Realm | Signature spell |
+| ----- | ----- | --------------- |
+| Bloom | Domino | Dragon Flame |
+| Stella | Solaria | Solar Flare |
+| Flora | Lynphea | Summer Blossom |
+| Musa | Melody | Sonic Blast |
+| Tecna | Zenith | Firewall |
+| Aisha | Andros | Morphix Wave |
+
+Fill the magic meter and press `F` to cast your fairy's **signature spell**:
+for fourteen seconds spells cost nothing, you fire faster, deal 70% more
+damage and take half.
+
+Aisha joins the Winx in their second year, so she is locked until you finish
+the first-year campaign.
 
 ![Choose your fairy](screenshots/02-character-select.png)
 
-**Three levels**, each with its own enemies, music and objective:
+## Enemies
 
-1. **Alfea Courtyard** — clear the swarming creepers, gather gems from the
-   terraces (you will need to fly), then take the portal.
-2. **Whispering Wood** — trolls in the ruins, wisps in the canopy, and a
-   climb up floating platforms to the portal at the top.
-3. **Cloud Tower** — a boss fight against Icy across three attack phases:
-   spread volleys, a shard ring with summoned reinforcements, and a homing
-   barrage.
-
-**Enchantix**: fill the magic meter and press `F`. For fourteen seconds spells
-cost nothing, you fire faster, deal 70% more damage, and take half.
-
-![Enchantix](screenshots/04-enchantix-flight.png)
-![Cloud Tower](screenshots/06-cloud-tower-boss.png)
-
----
+**Ghouls** — the Trix's foot soldiers, fast and fragile. **Wisps** — flying
+ranged attackers. **Trolls** — heavy brutes that telegraph a slam. **Knut** —
+the ogre, who whistles up ghouls once he is hurt. **The Army of Decay** — slow,
+heavy, and it sheds rot as it comes. **The Trix** — Icy, Darcy and Stormy, each
+with three attack phases keyed to her own element.
 
 ## Why Panda3D?
 
@@ -108,8 +144,8 @@ Windows, then the software renderer, rather than failing to start.
 
 ### Performance choices
 
-- **No art assets.** Every model — fairies, enemies, buildings, trees, the
-  boss — is generated from primitives at load time (`winx3d/geometry.py`), and
+- **No art assets.** Every model — fairies, ghouls, toadstool houses, the
+  Trix — is generated from primitives at load time (`winx3d/geometry.py`), and
   each object is baked into a single `Geom` to keep draw calls low.
 - **Vertex colours instead of textures**, with baked-in shading, so there is no
   texture memory pressure and no shader cost.
@@ -132,10 +168,11 @@ main.py               Launcher: command line, engine configuration
 winx3d/
   config.py           Tunables, key bindings, the saved profile
   geometry.py         Procedural mesh builder (boxes, spheres, cylinders, ...)
+  lore.py             Canon: characters, realms, the Codex, the S1 script
   characters.py       The six fairies, their models and the animator
-  world.py            Level geometry, collision boxes, the three level defs
+  world.py            Level geometry, collision boxes, the nine chapters
   player.py           Movement, flight, combat, third-person camera
-  enemies.py          Creeper / Wisp / Troll / Witch AI
+  enemies.py          Ghoul / Wisp / Troll / Decay / Knut / Trix AI
   effects.py          Projectiles, particles, pickups
   hud.py              Heads-up display
   audio.py            Sound and music synthesis
@@ -156,8 +193,10 @@ The whole game can be played through with no display attached, which is how it
 is tested:
 
 ```sh
-python3 tests/smoke.py      # 59 checks: menus, movement, collision, flight,
-                            # combat, pickups, death, portals, boss, teardown
+python3 tests/smoke.py      # 76 checks: lore integrity, menus, unlocks, the
+                            # story system, all nine chapters, movement,
+                            # collision, flight, combat, pickups, death,
+                            # portals, the Trix, teardown
 python3 tools/capture.py    # regenerate screenshots/
 ```
 

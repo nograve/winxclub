@@ -11,7 +11,7 @@ from panda3d.core import (AmbientLight, CardMaker, ClockObject,
                           NodePath, TextNode, TransparencyAttrib, Vec3, Vec4,
                           WindowProperties)
 
-from . import characters, config as C, enemies as E
+from . import characters, config as C, enemies as E, lore
 from .audio import Audio
 from .effects import EffectSystem, Pickup
 from .geometry import MeshBuilder, shade
@@ -20,6 +20,17 @@ from .player import Player
 from .world import LEVELS, WorldBuilder
 
 TITLE_COLOR = (1.0, 0.55, 0.78, 1)
+
+# Three synthesised tracks cover the campaign: a bright one for the safe
+# places, a darker one for the wild ones, and a driving one for the Trix.
+MUSIC_FOR = {
+    "gardenia": "music_alfea", "alfea": "music_alfea",
+    "pixievillage": "music_alfea",
+    "swamp": "music_wood", "roccaluce": "music_wood",
+    "redfountain": "music_wood",
+    "cloudtower": "music_tower", "siege_cloudtower": "music_tower",
+    "battle_alfea": "music_tower",
+}
 
 
 def _portal_model(color: Vec4) -> NodePath:
@@ -91,7 +102,12 @@ class Game(ShowBase):
         self.pickups: list = []
         self.portal = None
         self.portal_active = False
-        self.boss = None
+        self.bosses = []
+        self.chapter = None
+        self.story_lines = []
+        self.story_index = 0
+        self.story_chapter = None
+        self.story_after = "play"
         self.time = 0.0
         self.level_time = 0.0
         self.paused = False
@@ -171,7 +187,7 @@ class Game(ShowBase):
 
     def _on_key_down(self, key: str) -> None:
         in_menu = self.state in ("title", "options", "select", "help",
-                                 "results", "gameover", "paused")
+                                 "results", "gameover", "paused", "story")
         if in_menu:
             if key in self.MENU_VERTICAL:
                 self._menu_move(self.MENU_VERTICAL[key])
@@ -329,6 +345,78 @@ class Game(ShowBase):
             t.setText(("> %s <" % label) if sel else label)
             t.setFg((1.0, 0.85, 0.35, 1) if sel else (1, 1, 1, 0.85))
 
+    # ------------------------------------------------------------------
+    # story
+    # ------------------------------------------------------------------
+    def show_story(self, chapter, lines, after: str) -> None:
+        """Play a chapter's dialogue, one line at a time, over the world."""
+        self.state = "story"
+        self.story_lines = list(lines)
+        self.story_index = 0
+        self.story_chapter = chapter
+        self.story_after = after
+        self._release_all()
+        if self.hud is not None:
+            self.hud.set_visible(False)
+        self._apply_mouse_mode()
+        self._render_story()
+
+    def _render_story(self) -> None:
+        self.clear_screen()
+        ch = self.story_chapter
+        a = self.getAspectRatio()
+        # Dim the top of the screen a little, the dialogue box a lot.
+        card(self.screen, -a, -1.0, a * 2, 0.68, (0.06, 0.05, 0.12, 0.90),
+             "story_box")
+        card(self.screen, -a, 0.62, a * 2, 0.38, (0.06, 0.05, 0.12, 0.72),
+             "story_head")
+
+        text(self.screen, "CHAPTER %d" % ch.number, 0, 0.85, 0.046,
+             (1.0, 0.80, 0.40, 1), TextNode.ACenter)
+        text(self.screen, ch.title.upper(), 0, 0.75, 0.070, TITLE_COLOR,
+             TextNode.ACenter)
+        text(self.screen, lore.REALMS.get(ch.realm, ""), 0, 0.67, 0.040,
+             (0.80, 0.86, 0.98, 1), TextNode.ACenter)
+
+        key, line = self.story_lines[self.story_index]
+        sp = lore.speaker(key)
+        if sp.name:
+            text(self.screen, sp.name.upper(), -a + 0.10, -0.44, 0.056,
+                 sp.color, TextNode.ALeft)
+            if sp.title:
+                text(self.screen, sp.title, -a + 0.10, -0.515, 0.034,
+                     (0.78, 0.80, 0.88, 1), TextNode.ALeft)
+            # A colour swatch so each speaker is identifiable at a glance.
+            card(self.screen, -a + 0.035, -0.525, 0.045, 0.135,
+                 (sp.color[0], sp.color[1], sp.color[2], 1.0), "swatch")
+        # Body text wraps downward, so it starts high enough in the box that
+        # three wrapped lines still clear the bottom of the screen.
+        body_y = -0.62 if sp.name else -0.52
+        text(self.screen, line, -a + 0.10, body_y, 0.050,
+             (1, 1, 1, 0.96) if sp.name else (0.86, 0.90, 1.0, 0.96),
+             TextNode.ALeft, wordwrap=(a * 2 - 0.22) / 0.050)
+
+        text(self.screen, "%d / %d      Enter to continue"
+             % (self.story_index + 1, len(self.story_lines)),
+             a - 0.10, -0.92, 0.038, (1, 1, 1, 0.65), TextNode.ARight)
+
+    def _advance_story(self) -> None:
+        self.story_index += 1
+        if self.story_index < len(self.story_lines):
+            self.audio.play("menu")
+            self._render_story()
+            return
+        if self.story_after == "play":
+            self.begin_play()
+        else:
+            self.show_results()
+
+    def fairy_unlocked(self, f) -> bool:
+        """Aisha of Andros joins the Winx in their second year, so she is
+        locked until the first-year campaign has been cleared once."""
+        return f.season <= 1 or \
+            self.profile.get("levels_cleared", 0) >= len(LEVELS)
+
     def show_select(self) -> None:
         self.state = "select"
         self.clear_screen()
@@ -362,9 +450,15 @@ class Game(ShowBase):
 
     def _refresh_select(self) -> None:
         f = characters.ROSTER[self.select_index]
-        self.sel_name.setText(f.name.upper())
-        self.sel_element.setText("Fairy of the " + f.element)
-        self.sel_blurb.setText(f.blurb)
+        unlocked = self.fairy_unlocked(f)
+        self.sel_name.setText(f.name.upper() if unlocked else "? ? ?")
+        self.sel_element.setText(
+            "Fairy of the %s   -   %s" % (f.element, lore.REALMS.get(
+                f.realm, "").split(" - ")[-1])
+            if unlocked else "Joins the Winx in their second year")
+        self.sel_blurb.setText(
+            f.blurb if unlocked
+            else "Clear the first-year campaign to unlock Aisha.")
         bolts = "%d bolt%s" % (f.bolts, "" if f.bolts == 1 else "s")
         self.sel_stats.setText(
             "Speed %s    Power %s    Magic %s    %s"
@@ -372,12 +466,18 @@ class Game(ShowBase):
                self._pips(f.magic_rate), bolts))
         for i, chip in enumerate(self.sel_row):
             sel = i == self.select_index
+            locked = not self.fairy_unlocked(characters.ROSTER[i])
             chip.setScale(1.22 if sel else 0.94)
-            chip.setColorScale(1.0, 1.0, 1.0, 1.0 if sel else 0.5)
+            if locked:
+                chip.setColorScale(0.28, 0.28, 0.34, 1.0 if sel else 0.5)
+            else:
+                chip.setColorScale(1.0, 1.0, 1.0, 1.0 if sel else 0.5)
 
         if self.preview is not None:
             self.preview.removeNode()
         model, parts = characters.build_fairy(f, scale=1.0)
+        if not unlocked:
+            model.setColorScale(0.16, 0.15, 0.22, 1.0)   # silhouette only
         self.preview = NodePath("preview")
         self.preview.reparentTo(self.render)
         model.reparentTo(self.preview)
@@ -424,7 +524,9 @@ class Game(ShowBase):
             self._refresh_options()
 
     def on_confirm(self) -> None:
-        if self.state == "title":
+        if self.state == "story":
+            self._advance_story()
+        elif self.state == "title":
             choice = self.menu_items[self.menu_index]
             self.audio.play("menu")
             if choice == "Start Adventure":
@@ -437,6 +539,9 @@ class Game(ShowBase):
                 self.quit()
         elif self.state == "select":
             f = characters.ROSTER[self.select_index]
+            if not self.fairy_unlocked(f):
+                self.audio.play("hurt")
+                return
             self.profile["last_fairy"] = f.key
             C.save_profile(self.profile)
             self.start_run(f)
@@ -455,7 +560,11 @@ class Game(ShowBase):
             self.toggle_pause()
 
     def on_escape(self) -> None:
-        if self.state == "playing":
+        if self.state == "story":
+            # Skip the rest of this chapter's dialogue.
+            self.story_index = len(self.story_lines) - 1
+            self._advance_story()
+        elif self.state == "playing":
             self.toggle_pause()
         elif self.state == "paused":
             self.toggle_pause()
@@ -544,8 +653,9 @@ class Game(ShowBase):
         self.enemy_list = [
             E.spawn(s.kind, self.world_root, Vec3(s.pos), self.solids)
             for s in level.enemies]
-        self.boss = next((e for e in self.enemy_list
-                          if getattr(e, "is_boss", False)), None)
+        # Chapter 9 fields all three Trix at once, so bosses is a list.
+        self.bosses = [e for e in self.enemy_list
+                       if getattr(e, "is_boss", False)]
 
         self.pickups = [Pickup(self.world_root, Vec3(p), "gem")
                         for p in level.gems]
@@ -560,18 +670,36 @@ class Game(ShowBase):
 
         if self.hud is None:
             self.hud = HUD(self)
-        self.hud.set_visible(True)
-        self.hud.show_banner(level.name.upper(), level.subtitle, 3.4)
-        self.hud.set_objective(level.hint)
-
-        self.clear_screen()
-        self.state = "playing"
         self.paused = False
         self.death_timer = 0.0
         self.finish_timer = 0.0
         self.level_time = 0.0
+        self.audio.play_music(MUSIC_FOR.get(level.key, "music_alfea"))
+
+        # Frame the camera on the level while the chapter's dialogue plays.
+        self.player.update_camera(self.camera, 1.0)
+        chapter = lore.chapter_for(level.key)
+        self.chapter = chapter
+        if chapter is not None and chapter.intro:
+            self.show_story(chapter, chapter.intro, after="play")
+        else:
+            self.begin_play()
+
+    def begin_play(self) -> None:
+        """Hand control to the player once the chapter intro is done."""
+        level = self.level
+        self.clear_screen()
+        self.state = "playing"
+        self.hud.set_visible(True)
+        chapter = self.chapter
+        if chapter is not None:
+            self.hud.show_banner(level.name.upper(), chapter.objective, 3.6)
+            self.hud.set_objective(chapter.objective)
+        else:
+            self.hud.show_banner(level.name.upper(), level.subtitle, 3.4)
+            self.hud.set_objective(level.hint)
+        self.hud.set_gem_label(level.gem_name)
         self.set_playing_visuals(True)
-        self.audio.play_music("music_" + level.key)
         self._apply_mouse_mode()
 
     def unload_level(self) -> None:
@@ -594,7 +722,7 @@ class Game(ShowBase):
             self.player.root.removeNode()
             self.player.focus.removeNode()
             self.player = None
-        self.boss = None
+        self.bosses = []
         self.render.clearFog()
 
     def end_run(self) -> None:
@@ -638,10 +766,18 @@ class Game(ShowBase):
     # results / game over
     # ------------------------------------------------------------------
     def complete_level(self) -> None:
-        self.state = "results"
+        """Chapter cleared: play its closing dialogue, then show the results."""
         self.audio.stop_music()
         self._release_all()
         self.audio.play("victory")
+        chapter = self.chapter
+        if chapter is not None and chapter.outro:
+            self.show_story(chapter, chapter.outro, after="results")
+        else:
+            self.show_results()
+
+    def show_results(self) -> None:
+        self.state = "results"
         self.total_score = self.player.score + 500 + self.player.gems * 50
         self.lives = self.player.lives
         cleared = max(self.profile.get("levels_cleared", 0),
@@ -654,11 +790,17 @@ class Game(ShowBase):
         last = self.level_index >= len(LEVELS) - 1
         self.clear_screen()
         self._title_backdrop()
-        title = "ADVENTURE COMPLETE" if last else "LEVEL COMPLETE"
-        text(self.screen, title, 0, 0.55, 0.085, TITLE_COLOR, TextNode.ACenter)
-        text(self.screen, self.level.name, 0, 0.42, 0.055,
-             (1, 0.92, 0.6, 1), TextNode.ACenter)
-        rows = [("Gems collected", "%d" % self.player.gems),
+        title = "FIRST YEAR COMPLETE" if last else "CHAPTER COMPLETE"
+        text(self.screen, title, 0, 0.60, 0.080, TITLE_COLOR, TextNode.ACenter)
+        ch = self.chapter
+        text(self.screen,
+             ("%d. %s" % (ch.number, ch.title)) if ch else self.level.name,
+             0, 0.48, 0.055, (1, 0.92, 0.6, 1), TextNode.ACenter)
+        if ch is not None and ch.codex:
+            text(self.screen, "Codex piece at stake:  " + ch.codex,
+                 0, 0.40, 0.038, (0.75, 0.88, 1.0, 1), TextNode.ACenter)
+        rows = [(self.level.gem_name.title() + "s collected",
+                 "%d" % self.player.gems),
                 ("Time", "%d:%02d" % (int(self.level_time) // 60,
                                       int(self.level_time) % 60)),
                 ("Lives remaining", "%d" % self.player.lives),
@@ -670,8 +812,9 @@ class Game(ShowBase):
             text(self.screen, value, 0.06, y, 0.048, (1.0, 0.88, 0.45, 1),
                  TextNode.ALeft)
         if last:
-            text(self.screen, "Alfea is safe. Thank you for playing!",
-                 0, -0.34, 0.048, (0.85, 0.95, 1.0, 1), TextNode.ACenter)
+            text(self.screen, "Alfea still stands. Aisha of Andros has been "
+                 "unlocked.", 0, -0.34, 0.046, (0.85, 0.95, 1.0, 1),
+                 TextNode.ACenter)
         text(self.screen, "Enter to continue" if not last else
              "Enter to return to the title", 0, -0.62, 0.046,
              (1, 1, 1, 0.8), TextNode.ACenter)
@@ -781,18 +924,32 @@ class Game(ShowBase):
                 player.score += e.score
                 self.audio.play("enemy_die")
 
-        if self.boss is not None and self.boss.alive and \
-                self.boss.summon_request > 0:
-            self.boss.summon_request = 0
+        # Any boss can call for reinforcements; Knut whistles up ghouls, the
+        # Trix pull more wisps out of the air.
+        for boss in self.bosses:
+            if not boss.alive or getattr(boss, "summon_request", 0) <= 0:
+                continue
+            boss.summon_request = 0
+            kind = "ghoul" if boss.name == "knut" else "wisp"
+            base = boss.root.getPos()
             for i in range(2):
                 a = math.tau * i / 2 + self.time
-                pos = Vec3(math.cos(a) * 20.0, math.sin(a) * 20.0, 12.0)
+                pos = Vec3(base.x + math.cos(a) * 9.0,
+                           base.y + math.sin(a) * 9.0,
+                           base.z if kind == "wisp" else 2.0)
                 self.enemy_list.append(
-                    E.spawn("wisp", self.world_root, pos, self.solids))
+                    E.spawn(kind, self.world_root, pos, self.solids))
 
         self._update_pickups(dt, player)
         self._update_portal(dt, player)
-        self.hud.update(dt, player, self.boss)
+        self.hud.update(dt, player, self.active_boss())
+
+    def active_boss(self):
+        """The boss the HUD bar tracks - the first still standing."""
+        for b in self.bosses:
+            if b.alive:
+                return b
+        return None
 
     def _update_pickups(self, dt: float, player) -> None:
         pc = player.center()
@@ -839,13 +996,14 @@ class Game(ShowBase):
                 self.complete_level()
                 return
 
+        noun = self.level.gem_name
         if remaining:
             what = "Enemies remaining  %d" % remaining
             if need_gems:
-                what += "     Gems needed  %d" % need_gems
+                what += "     %ss needed  %d" % (noun.title(), need_gems)
         elif need_gems:
-            what = "Find %d more gem%s" % (need_gems,
-                                           "" if need_gems == 1 else "s")
+            what = "Find %d more %s%s" % (need_gems, noun,
+                                          "" if need_gems == 1 else "s")
         else:
             what = "Head for the portal!"
         self.hud.set_objective(what)

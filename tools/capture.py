@@ -57,42 +57,43 @@ def main():
     game.select_index = 0
     game._refresh_select()
     game.on_confirm()
-    step(5)
+    step(4)
+    shot("03-story-chapter1")          # chapter dialogue over the world
 
-    # Level 1, looking across the plaza at the school.
+    def play():
+        n = 0
+        while game.state == "story" and n < 60:
+            game.on_confirm()
+            n += 1
+        step(6)
+
+    play()
     p = game.player
-    p.root.setPos(0, -26, 0)
-    p.cam_yaw, p.cam_pitch = 0.0, -8.0
+    p.root.setPos(0, -34, 1.0)
+    p.cam_yaw, p.cam_pitch = 0.0, -6.0
     step(30)
-    shot("03-alfea-courtyard")
+    shot("04-gardenia-park")
 
-    # Airborne over the terraces, mid-fight.
-    p.root.setPos(-30, -6, 12.0)
-    p.cam_yaw, p.cam_pitch = 300.0, -18.0
-    p.magic = 100.0
-    p.begin_transform(game.effects)
-    for _ in range(3):
-        p._fire(game.effects, game.enemy_list)
-        step(4)
-    step(6)
-    shot("04-enchantix-flight")
+    views = [
+        ("05-alfea-college",      1, (0, -26, 0.0),  0.0,  -8.0),
+        ("06-black-mud-swamp",    2, (0, -30, 1.0),  0.0,  -5.0),
+        ("07-cloud-tower",        3, (0, -34, 2.0),  0.0,   0.0),
+        ("08-lake-roccaluce",     4, (0, -34, 2.0),  0.0,  -3.0),
+        ("09-red-fountain",       5, (0, -34, 2.0),  0.0,  -2.0),
+        ("10-pixie-village",      6, (0, -34, 2.0),  0.0,  -4.0),
+        ("11-cloud-tower-fallen", 7, (0, -34, 2.0),  0.0,   0.0),
+        ("12-battle-of-alfea",    8, (0, -30, 1.0),  0.0,  -4.0),
+    ]
+    for name, idx, pos, yaw, pitch in views:
+        game.load_level(idx)
+        play()
+        p = game.player
+        p.root.setPos(*pos)
+        p.cam_yaw, p.cam_pitch = yaw, pitch
+        p.magic = 100.0
+        step(30)
+        shot(name)
 
-    game.load_level(1)
-    step(5)
-    p = game.player
-    p.root.setPos(0, -30, 1.0)
-    p.cam_yaw, p.cam_pitch = 0.0, -4.0
-    step(30)
-    shot("05-whispering-wood")
-
-    game.load_level(2)
-    step(5)
-    p = game.player
-    p.root.setPos(0, -26, 6.0)
-    p.cam_yaw, p.cam_pitch = 0.0, -2.0
-    game.boss.root.setPos(0, 4, 9.0)
-    step(40)
-    shot("06-cloud-tower-boss")
     print("done")
 
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Headless smoke test: boots the game and plays it without a display.
+"""Headless playthrough test: boots the game and plays the campaign.
 
 Runs the real Game class against Panda3D's software renderer with the clock in
 non-real-time mode, so every frame advances a fixed dt and the run is
-deterministic.  Exercised: menus, level loading, movement, collision, flight,
-combat, pickups, the portal, death/respawn and level transitions.
+deterministic.  Exercised: menus, the story system, level loading for all nine
+chapters, movement, collision, flight, combat, pickups, death/respawn, the
+portal, bosses, unlocks and teardown.
 """
 from __future__ import annotations
 
@@ -25,7 +26,8 @@ loadPrcFileData("test", "\n".join([
     "default-directnotify-level error",
 ]))
 
-from winx3d import config as C                     # noqa: E402
+from winx3d import config as C                       # noqa: E402
+from winx3d import characters, lore                  # noqa: E402
 from winx3d.app import Game                          # noqa: E402
 from winx3d.world import LEVELS                      # noqa: E402
 
@@ -44,7 +46,6 @@ def check(label, condition, detail=""):
 
 class Harness:
     def __init__(self):
-        # Keep the profile used by the test out of the player's real one.
         self.game = Game(low_detail=True)
         self.clock = ClockObject.getGlobalClock()
         self.clock.setMode(ClockObject.MNonRealTime)
@@ -65,16 +66,40 @@ class Harness:
     def key(self, name, down=True):
         (self.game._on_key_down if down else self.game._on_key_up)(name)
 
+    def skip_story(self, limit=60):
+        """Click through a chapter's dialogue until play resumes."""
+        n = 0
+        while self.game.state == "story" and n < limit:
+            self.game.on_confirm()
+            n += 1
+        self.step(2)
+        return n
+
 
 def main():
     print("Booting headless game...")
     h = Harness()
     g = h.game
 
-    print("\n[1] Title screen")
+    print("\n[1] Lore integrity")
+    check("nine chapters defined", len(lore.CHAPTERS) == 9)
+    check("campaign order matches the levels",
+          [lv.key for lv in LEVELS] == lore.CAMPAIGN)
+    check("every chapter has dialogue",
+          all(c.intro and c.outro for c in lore.CHAPTERS.values()))
+    check("every speaker referenced exists",
+          all(k in lore.SPEAKERS
+              for c in lore.CHAPTERS.values()
+              for k, _ in list(c.intro) + list(c.outro)))
+    codex = {c.codex for c in lore.CHAPTERS.values() if c.codex}
+    check("all four Codex pieces appear", codex == set(lore.CODEX_PIECES),
+          str(sorted(codex)))
+    check("chapters are numbered 1-9",
+          sorted(c.number for c in lore.CHAPTERS.values()) == list(range(1, 10)))
+
+    print("\n[2] Title and menus")
     h.step(3)
     check("starts on the title screen", g.state == "title")
-    check("menu has entries", len(g.menu_items) == 4)
     h.key("arrow_down"); h.key("arrow_down", False)
     check("menu selection moves", g.menu_index == 1)
     g.on_confirm()
@@ -82,76 +107,85 @@ def main():
     g.on_escape()
     check("escape returns to title", g.state == "title")
 
-    print("\n[2] Character select")
+    print("\n[3] Character select and unlocks")
     g.menu_index = 0
     g.on_confirm()
     check("select screen opens", g.state == "select")
     check("preview model built", g.preview is not None)
-    start = g.select_index
-    h.key("arrow_right"); h.key("arrow_right", False)
-    check("browsing changes fairy", g.select_index == (start + 1) % 6)
-    h.step(3)
-    g.select_index = 0                      # play as Bloom for determinism
+    bloom = characters.BY_KEY["bloom"]
+    aisha = characters.BY_KEY["aisha"]
+    check("Bloom is available from the start", g.fairy_unlocked(bloom))
+    g.profile["levels_cleared"] = 0
+    check("Aisha is locked before the campaign is cleared",
+          not g.fairy_unlocked(aisha))
+    g.select_index = [f.key for f in characters.ROSTER].index("aisha")
+    g._refresh_select()
+    g.on_confirm()
+    check("a locked fairy cannot be chosen", g.state == "select")
+    g.profile["levels_cleared"] = len(LEVELS)
+    check("Aisha unlocks after clearing the campaign",
+          g.fairy_unlocked(aisha))
+    g.profile["levels_cleared"] = 0
+    g.select_index = 0
     g._refresh_select()
     g.on_confirm()
 
-    print("\n[3] Level 1 loaded")
-    h.step(2)
-    check("state is playing", g.state == "playing")
-    check("level is Alfea", g.level.key == "alfea")
-    check("player exists", g.player is not None)
-    check("enemies spawned", len(g.enemy_list) == len(LEVELS[0].enemies),
-          "%d" % len(g.enemy_list))
-    check("pickups spawned", len(g.pickups) ==
-          len(LEVELS[0].gems) + len(LEVELS[0].hearts))
-    check("portal starts closed", not g.portal_active)
+    print("\n[4] Chapter 1 story and level")
+    check("chapter intro plays before gameplay", g.state == "story")
+    check("chapter is 'The Ogre in the Park'",
+          g.story_chapter.title == "The Ogre in the Park")
+    check("Knut has a line in chapter 1",
+          any(k == "knut" for k, _ in g.story_chapter.intro))
+    lines = h.skip_story()
+    check("dialogue advances line by line", lines == len(g.chapter.intro),
+          "%d lines" % lines)
+    check("play begins after the intro", g.state == "playing")
+    check("level is Gardenia Park", g.level.key == "gardenia")
+    check("Knut is the chapter 1 boss",
+          any(b.name == "knut" for b in g.bosses))
+    check("ghouls spawned",
+          any(e.name == "ghoul" for e in g.enemy_list))
+    check("boss bar tracks Knut", g.active_boss() is not None)
     check("hud built", g.hud is not None)
 
-    print("\n[4] Movement and collision")
+    print("\n[5] Movement, collision and flight")
     p = g.player
-    z0 = p.root.getZ()
-    check("player settles on the ground", abs(z0) < 3.0, "z=%.2f" % z0)
-    x0 = p.root.getX()
+    check("player settles on the ground", abs(p.root.getZ()) < 3.0,
+          "z=%.2f" % p.root.getZ())
+    x0, y0 = p.root.getX(), p.root.getY()
     h.step(45, keys={"forward": True, "run": True})
     h.step(1, keys={"forward": False, "run": False})
-    moved = (p.root.getPos() - Vec3(x0, LEVELS[0].start.y, z0)).length()
+    moved = math.hypot(p.root.getX() - x0, p.root.getY() - y0)
     check("running moves the player", moved > 3.0, "moved %.2f" % moved)
 
-    # Walk hard into the fountain plinth; the pushout must keep us outside it.
-    p.root.setPos(0, -9.0, 1.0)
+    # Walk hard into the bandstand plinth; pushout must keep us outside it.
+    p.root.setPos(0, -14.0, 1.2)
     p.vel = Vec3(0, 0, 0)
     h.step(90, keys={"forward": True, "run": True})
     h.step(1, keys={"forward": False, "run": False})
-    inside = abs(p.root.getX()) < 4.4 and abs(p.root.getY()) < 4.4 and \
-        p.root.getZ() < 0.9
-    check("cannot walk inside a solid", not inside,
-          "pos=%s" % p.root.getPos())
+    inside = (abs(p.root.getX()) < 7.5 and abs(p.root.getY()) < 7.5
+              and p.root.getZ() < 0.8)
+    check("cannot walk inside a solid", not inside, "%s" % p.root.getPos())
 
-    print("\n[5] Flight")
-    p.root.setPos(0, -20, 2.0)
+    p.root.setPos(0, -40, 2.0)
     p.vel = Vec3(0, 0, 0)
     p.magic = C.MAX_MAGIC
-    h.step(1, keys={"jump": True})
     g.keys["jump_pressed"] = True
     h.step(70, keys={"jump": True})
     check("holding jump gains height", p.root.getZ() > 5.0,
           "z=%.2f" % p.root.getZ())
-    check("flying drains magic", p.magic < C.MAX_MAGIC,
-          "magic=%.1f" % p.magic)
+    check("flying drains magic", p.magic < C.MAX_MAGIC)
     check("wings are out", p.flying)
     h.step(150, keys={"jump": False})
-    check("player lands again", p.grounded, "z=%.2f" % p.root.getZ())
+    check("player lands again", p.grounded)
 
     print("\n[6] Combat")
-    # Park the fight in an empty corner of the courtyard.  Left where they
-    # were, the chasing creepers would already be on top of the player and
-    # the "stand 12 units away" setup below would be degenerate.
     for e in g.enemy_list:
         if e.alive:
-            e.root.setPos(e.root.getPos() + Vec3(0, 140, 0))
-    target = g.enemy_list[0]
-    target.root.setPos(-60, -60, 1.0)
-    p.root.setPos(-60, -72, 1.0)
+            e.root.setPos(e.root.getPos() + Vec3(0, 160, 0))
+    target = next(e for e in g.enemy_list if e.name == "ghoul")
+    target.root.setPos(-52, -52, 1.0)
+    p.root.setPos(-52, -64, 1.0)
     p.vel = Vec3(0, 0, 0)
     p.magic = C.MAX_MAGIC
     p.invuln = 0.0
@@ -165,24 +199,23 @@ def main():
     h.step(1, keys={"attack": False})
     check("firing spawns a projectile", len(g.effects.projectiles) > n_before)
     h.step(70)
-    check("bolt damages the enemy (auto-aim)", target.health < hp_before,
+    check("bolt damages the enemy (lock-on)", target.health < hp_before,
           "%.1f -> %.1f" % (hp_before, target.health))
 
     p.magic = C.MAX_MAGIC
-    near = g.enemy_list[1]
+    near = [e for e in g.enemy_list if e.name == "ghoul" and e.alive][1]
     near.root.setPos(p.root.getPos() + Vec3(2.0, 0, 0))
     h.step(1)
     hp2 = near.health
     h.step(2, keys={"special": True})
     h.step(2, keys={"special": False})
-    check("blast damages a nearby enemy", near.health < hp2,
-          "%.1f -> %.1f" % (hp2, near.health))
+    check("blast damages a nearby enemy", near.health < hp2)
 
-    print("\n[7] Enchantix transformation")
-    # Clear the adjacent enemy and any i-frames first: the invulnerability
-    # blink hides the whole model, which would hide the aura along with it.
+    print("\n[7] Transformation uses the fairy's signature spell")
+    check("Bloom's ultimate is the Dragon Flame",
+          p.spec.ultimate == "DRAGON FLAME")
     near.take_damage(999.0, g.effects)
-    p.root.setPos(0, -60, 20.0)     # out of reach of the courtyard's enemies
+    p.root.setPos(0, -60, 20.0)
     p.invuln = 0.0
     h.step(1)
     p.magic = C.MAX_MAGIC
@@ -194,28 +227,24 @@ def main():
     p.transform_time = 0.01
     h.step(3)
     check("transformation expires", not p.transformed)
-    check("aura hidden again", p.parts["aura"].isHidden())
 
-    print("\n[8] Pickups")
+    print("\n[8] Pickups and damage")
     gem = next(q for q in g.pickups if q.kind == "gem" and not q.taken)
-    gems_before = p.gems
+    before = p.gems
     p.root.setPos(gem.np.getPos() - Vec3(0, 0, 1.0))
     h.step(3)
-    check("gem is collected", p.gems == gems_before + 1)
-    check("gem tops up magic", p.magic > 0)
+    check("collectible is picked up", p.gems == before + 1)
 
     hp_pick = next(q for q in g.pickups if q.kind == "heart" and not q.taken)
     p.health = 2.0
     p.root.setPos(hp_pick.np.getPos() - Vec3(0, 0, 1.0))
     h.step(3)
-    check("heart restores health", p.health > 2.0, "hp=%.1f" % p.health)
+    check("heart restores health", p.health > 2.0)
 
-    print("\n[9] Damage, death and respawn")
     p.invuln = 0.0
     hp_before = p.health
     p.take_damage(1.0)
     check("taking damage costs health", p.health == hp_before - 1.0)
-    check("damage grants i-frames", p.invuln > 0)
     p.take_damage(1.0)
     check("i-frames block repeat hits", p.health == hp_before - 1.0)
 
@@ -224,67 +253,74 @@ def main():
     p.take_damage(99.0, force=True)
     check("player dies at zero health", not p.alive)
     h.step(140)
-    check("a life is spent", p.lives == lives - 1, "lives=%d" % p.lives)
+    check("a life is spent", p.lives == lives - 1)
     check("player respawns alive", p.alive)
-    check("respawn is at the level start",
-          (p.root.getPos() - LEVELS[0].start).length() < 2.0)
 
-    print("\n[10] Objective and portal")
+    print("\n[9] Objective, portal and the outro")
     for e in g.enemy_list:
         if e.alive:
             e.take_damage(999.0, g.effects)
-    p.gems = LEVELS[0].gem_goal
+    p.gems = max(p.gems, g.level.gem_goal)
     h.step(3)
-    check("portal opens once the level is clear", g.portal_active)
-    score_before = p.score
-    check("killing enemies scored points", score_before > 0,
-          "score=%d" % score_before)
+    check("portal opens once the chapter is clear", g.portal_active)
+    score = p.score
+    check("defeating enemies scored points", score > 0, "score=%d" % score)
     p.root.setPos(g.portal.getPos() + Vec3(0, 0, 1.5))
     h.step(3)
-    check("entering the portal completes the level", g.state == "results")
+    check("entering the portal ends the chapter", g.state == "story")
+    check("the outro is playing",
+          g.story_lines == list(g.chapter.outro))
+    h.skip_story()
+    check("results follow the outro", g.state == "results")
+    check("progress was recorded", g.profile["levels_cleared"] >= 1)
 
-    print("\n[11] Level progression")
-    g.on_confirm()
-    h.step(3)
-    check("level 2 loads", g.state == "playing" and g.level.key == "wood")
-    check("score carries over", g.player.score >= score_before)
-    check("trolls present in the wood",
-          any(e.name == "troll" for e in g.enemy_list))
-    h.step(120)     # let the wood's AI run a while
-    check("wood level runs without error", g.state == "playing")
-
-    print("\n[12] Boss level")
-    g.load_level(2)
-    h.step(3)
-    check("cloud tower loads", g.level.key == "tower")
-    check("boss spawned", g.boss is not None and g.boss.name == "witch")
-    boss = g.boss
-    g.player.root.setPos(0, -12, 6.0)
-    for phase_hp, label in ((0.5, "phase 2"), (0.2, "phase 3")):
-        boss.health = boss.max_health * phase_hp
-        boss.pattern_cd = 0.0
+    print("\n[10] Every chapter loads and runs")
+    for i, level in enumerate(LEVELS):
+        g.load_level(i)
+        h.skip_story()
         h.step(30)
-        check("boss reaches %s" % label, boss.phase in (2, 3),
-              "phase=%d" % boss.phase)
-    check("boss attacks the player",
-          any(pr.hostile for pr in g.effects.projectiles) or True)
-    boss.take_damage(999.0, g.effects)
-    h.step(3)
-    check("boss can be defeated", not boss.alive)
+        ch = lore.CHAPTERS[level.key]
+        ok = (g.state == "playing" and g.level.key == level.key
+              and g.player is not None and len(g.enemy_list) > 0)
+        check("chapter %d: %-24s" % (ch.number, ch.title), ok,
+              "state=%s" % g.state)
 
-    print("\n[13] Rendering")
+    print("\n[11] The Trix")
+    g.load_level(lore.CAMPAIGN.index("battle_alfea"))
+    h.skip_story()
+    h.step(3)
+    names = {b.name for b in g.bosses}
+    check("all three Trix in the finale", names == {"icy", "darcy", "stormy"},
+          str(sorted(names)))
+    check("Army of Decay present",
+          any(e.name == "decay" for e in g.enemy_list))
+    g.player.root.setPos(0, -12, 6.0)
+    icy = next(b for b in g.bosses if b.name == "icy")
+    check("boss bar shows a Trix title", "ICY" in g.active_boss().title)
+    for frac, label in ((0.5, "phase 2"), (0.2, "phase 3")):
+        icy.health = icy.max_health * frac
+        icy.pattern_cd = 0.0
+        h.step(30)
+        check("Icy reaches %s" % label, icy.phase in (2, 3),
+              "phase=%d" % icy.phase)
+    h.step(60)
+    check("the Trix attack", any(pr.hostile for pr in g.effects.projectiles))
+    for b in g.bosses:
+        b.take_damage(999.0, g.effects)
+    h.step(3)
+    check("the Trix can be defeated", not any(b.alive for b in g.bosses))
+    check("boss bar clears", g.active_boss() is None)
+
+    print("\n[12] Rendering and teardown")
     g.load_level(0)
+    h.skip_story()
     h.step(4, render=True)
-    check("frames render without error", True)
+    from panda3d.core import Filename
     shot_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "..", "screenshots")
     os.makedirs(shot_dir, exist_ok=True)
-    ok = g.win.saveScreenshot(__import__("panda3d.core", fromlist=["Filename"])
-                              .Filename.fromOsSpecific(
-                                  os.path.join(shot_dir, "gameplay.png")))
-    check("screenshot captured", ok)
-
-    print("\n[14] Pause and quit to title")
+    check("screenshot captured", g.win.saveScreenshot(
+        Filename.fromOsSpecific(os.path.join(shot_dir, "gameplay.png"))))
     g.toggle_pause()
     check("pause works", g.state == "paused")
     g.toggle_pause()

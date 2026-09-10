@@ -26,10 +26,11 @@ def card(parent: NodePath, x, y, w, h, color, name="card") -> NodePath:
 
 
 def text(parent, msg, x, y, scale=FONT_SCALE, fg=(1, 1, 1, 1),
-         align=TextNode.ALeft, shadow=(0, 0, 0, 0.85)) -> OnscreenText:
+         align=TextNode.ALeft, shadow=(0, 0, 0, 0.85),
+         wordwrap=None) -> OnscreenText:
     return OnscreenText(text=msg, pos=(x, y), scale=scale, fg=fg,
                         align=align, parent=parent, shadow=shadow,
-                        mayChange=True)
+                        wordwrap=wordwrap, mayChange=True)
 
 
 class HUD:
@@ -100,6 +101,7 @@ class HUD:
         self.banner_sub = text(self.root, "", 0, 0.03, 0.045,
                                (1, 0.95, 0.80, 1), TextNode.ACenter)
         self.banner_timer = 0.0
+        self.gem_label = "GEMS"
 
         # --- reticle ------------------------------------------------------
         self.reticle = NodePath("reticle")
@@ -115,6 +117,10 @@ class HUD:
         self.banner.setText(title)
         self.banner_sub.setText(sub)
         self.banner_timer = seconds
+
+    def set_gem_label(self, name: str) -> None:
+        """Each chapter collects something different - pixies, pages, shards."""
+        self.gem_label = name.upper() + "S"
 
     def set_objective(self, msg: str) -> None:
         self.objective.setText(msg)
@@ -144,7 +150,8 @@ class HUD:
         self.magic_bar.setScale(max(0.001, frac), 1.0, 1.0)
         if player.transformed:
             self.magic_bar.setColor(1.0, 0.85, 0.35, 1.0)
-            self.magic_label.setText("ENCHANTIX  %0.0fs" % player.transform_time)
+            self.magic_label.setText("%s  %0.0fs" % (player.spec.ultimate,
+                                                     player.transform_time))
             self.magic_bar.setScale(
                 max(0.001, player.transform_time / C.TRANSFORM_TIME), 1, 1)
             self.enchantix.setText("")
@@ -152,16 +159,17 @@ class HUD:
             self.magic_bar.setColor(0.40, 0.95, 0.95, 1.0)
             self.magic_label.setText("MAGIC")
             self.enchantix.setText(
-                "[F]  ENCHANTIX READY" if player.magic >= C.TRANSFORM_COST
-                else "")
+                "[F]  %s READY" % player.spec.ultimate
+                if player.magic >= C.TRANSFORM_COST else "")
 
         self.score.setText("SCORE  %06d" % player.score)
-        self.gems.setText("GEMS  %d" % player.gems)
+        self.gems.setText("%s  %d" % (self.gem_label, player.gems))
         self.lives.setText("LIVES  %d" % player.lives)
 
         if boss is not None and boss.alive:
             self.boss_root.show()
-            self.boss_name.setText("ICY OF CLOUD TOWER")
+            self.boss_name.setText(getattr(boss, "title", boss.name.upper()))
+            self.boss_bar.setColor(boss.hit_color)
             self.boss_bar.setScale(
                 max(0.001, boss.health / boss.max_health), 1.0, 1.0)
         else:

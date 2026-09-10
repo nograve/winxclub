@@ -343,10 +343,14 @@ class Troll(Enemy):
         self.touch_player(dt, player)
 
 
-class Witch(Enemy):
-    """Boss. Three phases: volleys, summons, then a homing barrage."""
+class Trix(Enemy):
+    """Base class for the three witches of Cloud Tower.
 
-    name = "witch"
+    Icy, Darcy and Stormy share a silhouette and a three-phase structure; each
+    subclass supplies her own palette and her own attack for each phase.
+    """
+
+    name = "trix"
     max_health = 40.0
     radius = 2.0
     speed = 8.0
@@ -356,9 +360,10 @@ class Witch(Enemy):
     flying = True
     eye_height = 0.0
     is_boss = True
+    title = "WITCH OF CLOUD TOWER"
 
     robe = Vec4(0.30, 0.36, 0.62, 1)
-    ice = Vec4(0.60, 0.85, 1.0, 1)
+    ice = Vec4(0.60, 0.85, 1.0, 1)      # her signature element's colour
     hair = Vec4(0.82, 0.90, 1.0, 1)
 
     def __init__(self, parent, pos, solids) -> None:
@@ -430,45 +435,346 @@ class Witch(Enemy):
             return
 
         d = p - self.root.getPos()
-        if self.phase == 1:
-            # Three-shot spread.
-            self.pattern_cd = 1.9
-            for i in (-1, 0, 1):
-                dirn = Vec3(d)
-                dirn.normalize()
-                ang = math.radians(i * 10.0)
-                ca, sa = math.cos(ang), math.sin(ang)
-                dirn = Vec3(dirn.x * ca - dirn.y * sa,
-                            dirn.x * sa + dirn.y * ca, dirn.z)
-                effects.spawn_bolt(self.root.getPos(), dirn, 26.0, self.ice,
-                                   1.0, True, radius=0.45, life=2.4)
-        elif self.phase == 2:
-            # Ring of shards plus a call for reinforcements.
-            self.pattern_cd = 2.6
-            for i in range(10):
-                a = math.tau * i / 10
-                effects.spawn_bolt(self.root.getPos(),
-                                   Vec3(math.cos(a), math.sin(a), -0.15),
-                                   19.0, self.ice, 1.0, True, radius=0.4,
-                                   life=2.6)
+        self.cast(self.phase, d, player, effects)
+        effects.burst(self.root.getPos(), self.ice, 8, 5.0, 0.35)
+
+    # -- attacks ------------------------------------------------------------
+    def cast(self, phase, d, player, effects) -> None:
+        """Fire this witch's attack for the given phase. Overridden per Trix."""
+        self.spread(d, effects, 3, 10.0, 26.0)
+
+    def spread(self, d, effects, count, degrees, speed, color=None,
+               life=2.4) -> None:
+        """A fan of bolts centred on ``d``."""
+        self.pattern_cd = 1.9
+        base = Vec3(d)
+        if base.lengthSquared() < 1e-6:
+            return
+        base.normalize()
+        for i in range(count):
+            ang = math.radians((i - (count - 1) * 0.5) * degrees)
+            ca, sa = math.cos(ang), math.sin(ang)
+            dirn = Vec3(base.x * ca - base.y * sa,
+                        base.x * sa + base.y * ca, base.z)
+            effects.spawn_bolt(self.root.getPos(), dirn, speed,
+                               color or self.ice, 1.0, True, radius=0.45,
+                               life=life)
+
+    def ring_attack(self, effects, count=10, speed=19.0, color=None) -> None:
+        """A full circle of shards - forces the player to move, not dodge."""
+        self.pattern_cd = 2.6
+        for i in range(count):
+            a = math.tau * i / count
+            effects.spawn_bolt(self.root.getPos(),
+                               Vec3(math.cos(a), math.sin(a), -0.15), speed,
+                               color or self.ice, 1.0, True, radius=0.4,
+                               life=2.6)
+
+    def homing_volley(self, d, player, effects, count=3, color=None) -> None:
+        self.pattern_cd = 2.2
+        for _ in range(count):
+            jitter = Vec3(_rng.uniform(-1, 1), _rng.uniform(-1, 1), 0.2)
+            effects.spawn_bolt(self.root.getPos(), d + jitter * 4.0, 20.0,
+                               color or self.ice, 1.0, True, radius=0.42,
+                               life=3.0, homing=1.9, target=player)
+
+
+class Icy(Trix):
+    """Eldest of the Trix. Ice: straight volleys, shard rings, homing frost."""
+
+    name = "icy"
+    title = "ICY - WITCH OF ICE"
+    max_health = 40.0
+    score = 2000
+    robe = Vec4(0.30, 0.40, 0.66, 1)
+    ice = Vec4(0.62, 0.88, 1.00, 1)
+    hair = Vec4(0.85, 0.93, 1.00, 1)
+    hit_color = Vec4(0.62, 0.88, 1.00, 1)
+
+    def cast(self, phase, d, player, effects) -> None:
+        if phase == 1:
+            self.spread(d, effects, 3, 10.0, 26.0)
+        elif phase == 2:
+            self.ring_attack(effects, 10, 19.0)
             self.summon_request += 1
         else:
-            # Homing barrage — the player has to keep moving.
+            self.homing_volley(d, player, effects, 3)
+
+
+class Darcy(Trix):
+    """Middle sister. Darkness: wide blinding fans and illusory doubles."""
+
+    name = "darcy"
+    title = "DARCY - WITCH OF DARKNESS"
+    max_health = 38.0
+    score = 2000
+    speed = 9.0
+    robe = Vec4(0.34, 0.24, 0.46, 1)
+    ice = Vec4(0.66, 0.42, 0.92, 1)
+    hair = Vec4(0.48, 0.34, 0.62, 1)
+    hit_color = Vec4(0.66, 0.42, 0.92, 1)
+
+    def cast(self, phase, d, player, effects) -> None:
+        if phase == 1:
+            # A wide, slow curtain of dark - easy to see, hard to walk through.
+            self.spread(d, effects, 5, 14.0, 20.0, life=2.8)
+        elif phase == 2:
+            self.spread(d, effects, 7, 11.0, 22.0, life=2.8)
+            self.summon_request += 1
+        else:
+            self.homing_volley(d, player, effects, 4)
+            self.pattern_cd = 2.4
+
+
+class Stormy(Trix):
+    """Youngest. Storms: fast bolts from odd angles, then everything at once."""
+
+    name = "stormy"
+    title = "STORMY - WITCH OF STORMS"
+    max_health = 36.0
+    score = 2000
+    speed = 9.5
+    robe = Vec4(0.44, 0.24, 0.42, 1)
+    ice = Vec4(0.96, 0.56, 0.88, 1)
+    hair = Vec4(0.70, 0.30, 0.55, 1)
+    hit_color = Vec4(0.96, 0.56, 0.88, 1)
+
+    def cast(self, phase, d, player, effects) -> None:
+        if phase == 1:
+            self.spread(d, effects, 2, 16.0, 34.0)
+            self.pattern_cd = 1.4
+        elif phase == 2:
+            self.ring_attack(effects, 14, 24.0)
             self.pattern_cd = 2.2
-            for i in range(3):
-                jitter = Vec3(_rng.uniform(-1, 1), _rng.uniform(-1, 1), 0.2)
-                effects.spawn_bolt(self.root.getPos(), d + jitter * 4.0, 20.0,
-                                   Vec4(0.75, 0.55, 1.0, 1), 1.0, True,
-                                   radius=0.42, life=3.0, homing=1.9,
-                                   target=player)
-        effects.burst(self.root.getPos(), self.ice, 8, 5.0, 0.35)
+        else:
+            self.spread(d, effects, 5, 12.0, 34.0)
+            self.homing_volley(d, player, effects, 2)
+            self.pattern_cd = 1.8
+
+
+class Ghoul(Enemy):
+    """The Trix's foot soldiers. Fast, fragile, and they never come alone."""
+
+    name = "ghoul"
+    max_health = 2.5
+    radius = 1.0
+    speed = 7.0
+    score = 120
+    hit_color = Vec4(0.60, 0.45, 0.80, 1)
+    eye_height = 1.2
+
+    robe = Vec4(0.26, 0.22, 0.34, 1)
+    bone = Vec4(0.72, 0.70, 0.62, 1)
+    glow = Vec4(0.85, 0.35, 0.95, 1)
+
+    def build_model(self) -> None:
+        mb = MeshBuilder()
+        # Hooded, hunched, and deliberately taller than it is wide.
+        mb.cylinder((0, 0, 0.0), 0.30, 0.52, 1.55, self.robe, segments=9)
+        mb.cylinder((0, 0, 1.55), 0.52, 0.30, 0.45, shade(self.robe, 1.15),
+                    segments=9)
+        mb.sphere((0, 0, 1.92), 0.34, self.bone, segments=9, rings=7)
+        mb.sphere((0, -0.06, 2.02), 0.37, shade(self.robe, 0.85), segments=10,
+                  rings=7, squash=0.95)                       # hood
+        for sx in (-0.13, 0.13):
+            mb.sphere((sx, -0.26, 1.92), 0.075, self.glow, segments=6, rings=5)
+        for sx in (-1, 1):
+            mb.cylinder((sx * 0.40, 0, 1.45), 0.12, 0.07, -0.95, self.robe,
+                        segments=6)
+            mb.sphere((sx * 0.46, 0, 0.50), 0.13, self.bone, segments=6,
+                      rings=5)
+        m = mb.build("ghoul_mesh")
+        m.reparentTo(self.model)
+
+    def update(self, dt, player, effects) -> None:
+        self.t += dt
+        self.flash(dt)
+        self.settle(dt)
+        target = player.root.getPos()
+        dist = (target - self.root.getPos()).length()
+        if dist < 45.0 and player.alive:
+            self.state = "chase"
+            self.face(target, dt, 280.0)
+            self.move_toward(target, dt,
+                             self.speed * (1.25 if dist < 14.0 else 1.0),
+                             stop_at=1.5)
+            # A loping, lurching gait rather than a smooth glide.
+            self.model.setZ(abs(math.sin(self.t * 7.0)) * 0.18)
+            self.model.setR(math.sin(self.t * 3.5) * 9.0)
+        else:
+            self.state = "idle"
+            self.model.setZ(math.sin(self.t * 1.8) * 0.05)
+        self.touch_player(dt, player)
+
+
+class Knut(Enemy):
+    """The ogre. A boss in Chapter 1, ordinary muscle for the Trix later."""
+
+    name = "knut"
+    title = "KNUT - OGRE"
+    max_health = 22.0
+    radius = 2.3
+    speed = 5.0
+    touch_damage = 2.0
+    score = 800
+    hit_color = Vec4(0.80, 0.62, 0.40, 1)
+    eye_height = 2.2
+    is_boss = True
+
+    hide = Vec4(0.56, 0.48, 0.34, 1)
+    cloth = Vec4(0.46, 0.26, 0.28, 1)
+    tusk = Vec4(0.92, 0.90, 0.80, 1)
+
+    def __init__(self, parent, pos, solids) -> None:
+        super().__init__(parent, pos, solids)
+        self.windup = 0.0
+        self.slam_done = False
+        self.charge = 0.0
+        self.summon_request = 0
+
+    def build_model(self) -> None:
+        mb = MeshBuilder()
+        for sx in (-0.55, 0.55):
+            mb.cylinder((sx, 0, 0.0), 0.42, 0.36, 1.30, self.hide, segments=8)
+            mb.sphere((sx, -0.1, 0.05), 0.44, shade(self.hide, 0.9),
+                      segments=8, rings=6, squash=0.7)
+        mb.cylinder((0, 0, 1.15), 1.25, 1.05, 1.45, self.hide, segments=11)
+        mb.box((0, 0, 1.35), (2.7, 1.5, 0.42), self.cloth)         # belt
+        mb.sphere((0, 0, 2.75), 1.05, self.hide, segments=11, rings=8,
+                  squash=0.92)
+        mb.sphere((0, -0.35, 2.60), 0.62, shade(self.hide, 1.06), segments=9,
+                  rings=7, squash=0.8)                             # snout
+        for sx in (-0.3, 0.3):
+            mb.sphere((sx, -0.72, 2.82), 0.15, Vec4(0.95, 0.80, 0.25, 1),
+                      segments=6, rings=5)
+            mb.cylinder((sx, -0.62, 2.42), 0.11, 0.0, 0.55, self.tusk,
+                        segments=6)                                # tusks
+            mb.cylinder((sx * 0.9, 0.5, 3.35), 0.16, 0.0, 0.5,
+                        shade(self.hide, 0.8), segments=6)         # ears
+        arm = MeshBuilder()
+        for sx in (-1.7, 1.7):
+            arm.sphere((sx, 0, 2.60), 0.52, self.hide, segments=8, rings=6)
+            arm.cylinder((sx, 0, 1.05), 0.40, 0.50, 1.60, self.hide,
+                         segments=8)
+            arm.sphere((sx, 0, 0.98), 0.58, shade(self.hide, 0.92),
+                       segments=8, rings=6)
+        mb.build("knut_mesh").reparentTo(self.model)
+        arms = arm.build("knut_arms")
+        arms.reparentTo(self.model)
+        self.parts["arms"] = arms
+
+    def update(self, dt, player, effects) -> None:
+        self.t += dt
+        self.flash(dt)
+        self.settle(dt)
+        target = player.root.getPos()
+        dist = (target - self.root.getPos()).length()
+
+        if self.windup > 0.0:
+            self.windup -= dt
+            self.face(target, dt, 80.0)
+            k = max(0.0, self.windup / 1.0)
+            self.parts["arms"].setP(-80.0 * (1.0 - k))
+            self.parts["arms"].setZ(1.3 * (1.0 - k))
+            if self.windup <= 0.0 and not self.slam_done:
+                self.slam_done = True
+                self.parts["arms"].setP(0)
+                self.parts["arms"].setZ(0)
+                effects.ring(self.root.getPos() + Vec3(0, 0, 0.3),
+                             Vec4(0.90, 0.72, 0.45, 1), 7.0, 20)
+                effects.burst(self.root.getPos(), self.hit_color, 14, 8.0, 0.5)
+                if dist < 8.0 and player.alive:
+                    player.take_damage(2.0)
+                self.attack_cd = 2.0
+                # Below half health he starts whistling for ghouls.
+                if self.health < self.max_health * 0.5:
+                    self.summon_request += 1
+            return
+
+        if dist < 45.0 and player.alive:
+            self.state = "chase"
+            self.face(target, dt, 150.0)
+            self.attack_cd -= dt
+            if dist < 7.5 and self.attack_cd <= 0.0:
+                self.windup = 1.0
+                self.slam_done = False
+            else:
+                self.move_toward(target, dt, self.speed, stop_at=5.0)
+                sway = math.sin(self.t * 3.8)
+                self.model.setR(sway * 6.0)
+                self.parts["arms"].setP(sway * 20.0)
+        else:
+            self.state = "idle"
+            self.model.setR(math.sin(self.t * 1.1) * 2.5)
+        self.touch_player(dt, player)
+
+
+class DecayBeast(Enemy):
+    """Army of Decay. Slow, heavy, and it rots the ground it stands on."""
+
+    name = "decay"
+    max_health = 12.0
+    radius = 1.8
+    speed = 4.6
+    touch_damage = 2.0
+    score = 400
+    hit_color = Vec4(0.55, 0.62, 0.35, 1)
+    eye_height = 1.6
+
+    rot = Vec4(0.34, 0.36, 0.24, 1)
+    bile = Vec4(0.62, 0.72, 0.30, 1)
+
+    def build_model(self) -> None:
+        mb = MeshBuilder()
+        # Lopsided on purpose: nothing in the Army of Decay is symmetrical.
+        mb.cylinder((0, 0, 0.0), 0.70, 0.95, 1.20, self.rot, segments=9)
+        mb.sphere((0, 0, 1.75), 1.15, self.rot, segments=10, rings=8,
+                  squash=0.85)
+        mb.sphere((0.35, -0.2, 2.35), 0.62, shade(self.rot, 1.15), segments=9,
+                  rings=7)
+        for sx, sz, r in ((-0.75, 2.15, 0.30), (0.55, 2.75, 0.22),
+                          (-0.30, 2.60, 0.26)):
+            mb.sphere((sx, -0.35, sz), r, self.bile, segments=7, rings=5)
+        for sx in (-1, 1):
+            mb.cylinder((sx * 1.05, 0.1, 1.70), 0.26, 0.10, -1.30,
+                        shade(self.rot, 0.88), segments=7)
+            mb.cylinder((sx * 0.45, 0, 0.0), 0.26, 0.20, -0.05,
+                        shade(self.rot, 0.8), segments=6)
+        m = mb.build("decay_mesh")
+        m.reparentTo(self.model)
+
+    def update(self, dt, player, effects) -> None:
+        self.t += dt
+        self.flash(dt)
+        self.settle(dt)
+        target = player.root.getPos()
+        dist = (target - self.root.getPos()).length()
+        if dist < 50.0 and player.alive:
+            self.state = "chase"
+            self.face(target, dt, 130.0)
+            self.move_toward(target, dt, self.speed, stop_at=2.4)
+            self.model.setR(math.sin(self.t * 3.0) * 7.0)
+            self.model.setZ(abs(math.sin(self.t * 3.0)) * 0.12)
+            # It sheds constantly, which is how you spot one in the dark.
+            if _rng.random() < dt * 3.0:
+                effects.burst(self.root.getPos() + Vec3(0, 0, 1.2),
+                              self.bile, 1, 1.6, 0.18, gravity=-6.0)
+        else:
+            self.state = "idle"
+            self.model.setR(math.sin(self.t * 1.0) * 3.0)
+        self.touch_player(dt, player)
 
 
 KINDS = {
     "creeper": Creeper,
+    "ghoul": Ghoul,
     "wisp": Wisp,
     "troll": Troll,
-    "witch": Witch,
+    "decay": DecayBeast,
+    "knut": Knut,
+    "icy": Icy,
+    "darcy": Darcy,
+    "stormy": Stormy,
 }
 
 

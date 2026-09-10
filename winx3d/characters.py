@@ -34,6 +34,9 @@ class Fairy:
     magic_rate: float = 1.0   # multiplier on magic regeneration
     bolts: int = 1            # projectiles per shot
     spread: float = 0.0       # degrees between projectiles
+    realm: str = "magix"      # home realm
+    ultimate: str = "MAGIC WINX"   # her signature spell, shown when charged
+    season: int = 1           # the season she joins the Winx in
     skin: Vec4 = field(default=SKIN)
 
 
@@ -43,38 +46,44 @@ ROSTER: list[Fairy] = [
           hair=Vec4(0.95, 0.42, 0.18, 1), dress=Vec4(0.28, 0.72, 0.95, 1),
           accent=Vec4(1.0, 0.78, 0.30, 1), magic=Vec4(1.0, 0.55, 0.15, 1),
           wing=Vec4(1.0, 0.72, 0.45, 0.55),
-          speed=1.0, power=1.15, magic_rate=1.0),
+          speed=1.0, power=1.15, magic_rate=1.0,
+          realm="domino", ultimate="DRAGON FLAME", season=1),
     Fairy("stella", "Stella", "Sun and Moon",
           "Bright, fast bolts and a generous magic pool.",
           hair=Vec4(0.98, 0.85, 0.38, 1), dress=Vec4(1.0, 0.62, 0.20, 1),
           accent=Vec4(1.0, 0.94, 0.62, 1), magic=Vec4(1.0, 0.92, 0.35, 1),
           wing=Vec4(1.0, 0.95, 0.60, 0.55),
-          speed=1.05, power=0.95, magic_rate=1.25),
+          speed=1.05, power=0.95, magic_rate=1.25,
+          realm="solaria", ultimate="SOLAR FLARE", season=1),
     Fairy("flora", "Flora", "Nature",
           "Twin vine bolts. Slower, but covers a wide arc.",
           hair=Vec4(0.65, 0.42, 0.24, 1), dress=Vec4(0.42, 0.80, 0.44, 1),
           accent=Vec4(0.95, 0.55, 0.72, 1), magic=Vec4(0.45, 0.92, 0.42, 1),
           wing=Vec4(0.70, 0.98, 0.70, 0.55),
-          speed=0.92, power=0.95, magic_rate=1.0, bolts=2, spread=7.0),
+          speed=0.92, power=0.95, magic_rate=1.0, bolts=2, spread=7.0,
+          realm="lynphea", ultimate="SUMMER BLOSSOM", season=1),
     Fairy("musa", "Musa", "Music",
           "Quick on her feet, cheap sound-wave attacks.",
           hair=Vec4(0.20, 0.16, 0.30, 1), dress=Vec4(0.90, 0.28, 0.48, 1),
           accent=Vec4(0.55, 0.35, 0.85, 1), magic=Vec4(0.85, 0.40, 0.95, 1),
           wing=Vec4(0.90, 0.60, 1.0, 0.55),
-          speed=1.18, power=0.90, magic_rate=1.15),
+          speed=1.18, power=0.90, magic_rate=1.15,
+          realm="melody", ultimate="SONIC BLAST", season=1),
     Fairy("tecna", "Tecna", "Technology",
           "Three-way pulse spread. Precision over raw damage.",
           hair=Vec4(0.60, 0.25, 0.72, 1), dress=Vec4(0.30, 0.85, 0.80, 1),
           accent=Vec4(0.65, 0.95, 1.0, 1), magic=Vec4(0.40, 0.95, 0.90, 1),
           wing=Vec4(0.55, 0.95, 1.0, 0.55),
-          speed=0.98, power=0.75, magic_rate=1.1, bolts=3, spread=9.0),
+          speed=0.98, power=0.75, magic_rate=1.1, bolts=3, spread=9.0,
+          realm="zenith", ultimate="FIREWALL", season=1),
     Fairy("aisha", "Aisha", "Waves",
           "The strongest single hit in the roster, and the best flyer.",
           hair=Vec4(0.28, 0.18, 0.14, 1), dress=Vec4(0.25, 0.55, 0.95, 1),
           accent=Vec4(0.45, 0.95, 0.85, 1), magic=Vec4(0.30, 0.70, 1.0, 1),
           wing=Vec4(0.50, 0.85, 1.0, 0.55),
           speed=1.10, power=1.30, magic_rate=0.85,
-          skin=Vec4(0.62, 0.44, 0.32, 1)),
+          skin=Vec4(0.62, 0.44, 0.32, 1),
+          realm="andros", ultimate="MORPHIX WAVE", season=2),
 ]
 
 BY_KEY = {f.key: f for f in ROSTER}
