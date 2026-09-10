@@ -57,6 +57,12 @@ class Player:
         # Camera rig: yaw pivot -> pitch pivot -> camera mount.
         self.cam_yaw = 0.0
         self.cam_pitch = C.CAM_PITCH
+        # The camera's real position and view direction, refreshed every
+        # frame. Aiming needs the actual ray, not just the orbit angles.
+        self.cam_pos = Vec3(start) + Vec3(0, -C.CAM_DISTANCE, C.CAM_HEIGHT)
+        self.cam_dir = Vec3(0, 1, 0)
+        self.lock_target = None
+        self.audio = None          # set by the game once it owns the player
         self.focus = NodePath("cam_focus")
         self.focus.reparentTo(parent)
         self.focus.setPos(start + Vec3(0, 0, 2.2))
@@ -179,6 +185,8 @@ class Player:
             self.coyote = max(0.0, self.coyote - dt)
 
         if self.jump_buffer > 0.0 and (self.grounded or self.coyote > 0.0):
+            if self.audio is not None:
+                self.audio.play("jump", 0.5)
             self.vel.z = C.JUMP_SPEED
             self.grounded = False
             self.coyote = 0.0
@@ -251,20 +259,36 @@ class Player:
         self.magic = min(C.MAX_MAGIC, self.magic + regen * dt)
 
     # -- combat -------------------------------------------------------------
+    @property
+    def aim_pitch(self) -> float:
+        """Firing pitch, in degrees, decoupled from the camera's own tilt.
+
+        The camera sits above and behind the fairy and looks *down* at her, so
+        its pitch is not where a shot from her hands should go - fired from
+        chest height along that tilt, a bolt hits the ground a couple of paces
+        ahead.  Worse, the camera pulls in when a wall is behind you, which
+        would make the aim dive at exactly the wrong moment.  So neutral
+        camera pitch means a level shot, and looking up or down moves the aim
+        by the same amount.
+        """
+        return max(-60.0, min(60.0, self.cam_pitch - C.CAM_PITCH))
+
     def aim_direction(self, enemies) -> Vec3:
-        """Camera-forward, snapped to the nearest enemy inside the assist cone."""
-        pitch = math.radians(self.cam_pitch)
+        """From the chest along the aim pitch, snapping to a locked target."""
+        pitch = math.radians(self.aim_pitch)
         yaw = math.radians(self.cam_yaw)
         aim = Vec3(-math.sin(yaw) * math.cos(pitch),
                    math.cos(yaw) * math.cos(pitch),
                    math.sin(pitch))
         aim.normalize()
         origin = self.center() + Vec3(0, 0, 0.35)
+
         # Gather every enemy inside the assist cone, then lock the *nearest*
         # of them.  Picking the best-aligned one instead would let a distant
         # enemy that happens to line up steal the shot from the one the
         # player is standing in front of.
         best, best_dist = None, 1e9
+        self.lock_target = None
         for e in enemies:
             if not e.alive:
                 continue
@@ -275,12 +299,20 @@ class Player:
             d /= dist
             if d.dot(aim) > 0.80 and dist < best_dist:
                 best, best_dist = d, dist
+                self.lock_target = e
         if best is not None:
             # Commit to the locked target rather than blending part-way toward
             # it: a half-aimed bolt just misses, which reads as the game
             # ignoring the shot.
             aim = best
         return aim
+
+    def aim_point(self, enemies, distance: float = 35.0) -> Vec3:
+        """The world point the shot is heading for - what the reticle marks."""
+        if self.lock_target is not None and self.lock_target.alive:
+            return self.lock_target.center()
+        origin = self.center() + Vec3(0, 0, 0.35)
+        return origin + self.aim_direction(enemies) * distance
 
     def _combat(self, dt, keys, effects, enemies) -> None:
         free = self.transformed
@@ -303,6 +335,8 @@ class Player:
 
     def _fire(self, effects, enemies) -> None:
         self.anim.trigger_attack()
+        if self.audio is not None:
+            self.audio.play_variant("shoot", self.spec.key)
         aim = self.aim_direction(enemies)
         origin = self.center() + aim * 1.2 + Vec3(0, 0, 0.3)
         n = self.spec.bolts
@@ -334,6 +368,8 @@ class Player:
 
     # -- transformation -----------------------------------------------------
     def begin_transform(self, effects) -> None:
+        if self.audio is not None:
+            self.audio.play("transform")
         self.magic = 0.0
         self.transform_time = C.TRANSFORM_TIME
         self.parts["aura"].show()
@@ -355,6 +391,8 @@ class Player:
             amount *= 0.5           # Enchantix soaks half of everything
         self.health -= amount
         self.invuln = C.INVULN_TIME
+        if self.audio is not None:
+            self.audio.play("hurt")
         if self.health <= 0.0:
             self.health = 0.0
             self.alive = False
@@ -402,8 +440,14 @@ class Player:
                     -math.cos(yaw) * math.cos(pitch),
                     -math.sin(pitch))
         dist = self._camera_distance(focus, back, C.CAM_DISTANCE)
-        camera.setPos(focus + back * dist + Vec3(0, 0, C.CAM_HEIGHT * 0.25))
+        pos = focus + back * dist + Vec3(0, 0, C.CAM_HEIGHT * 0.25)
+        camera.setPos(pos)
         camera.lookAt(focus)
+        self.cam_pos = Vec3(pos)
+        d = focus - pos
+        if d.lengthSquared() > 1e-9:
+            d.normalize()
+            self.cam_dir = d
 
     def _camera_distance(self, focus: Vec3, back: Vec3, want: float) -> float:
         """Pull the camera in when a wall would come between it and the player."""

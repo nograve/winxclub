@@ -6,7 +6,7 @@ import sys
 
 from direct.showbase.ShowBase import ShowBase
 from direct.task import Task
-from panda3d.core import (AmbientLight, CardMaker, ClockObject,
+from panda3d.core import (AmbientLight, CardMaker, ClockObject, Point2,
                           DirectionalLight, Fog,
                           NodePath, TextNode, TransparencyAttrib, Vec3, Vec4,
                           WindowProperties)
@@ -23,22 +23,39 @@ TITLE_COLOR = (1.0, 0.55, 0.78, 1)
 
 # Three synthesised tracks cover the campaign: a bright one for the safe
 # places, a darker one for the wild ones, and a driving one for the Trix.
-MUSIC_FOR = {
-    "alfea": "music_alfea", "pixievillage": "music_alfea",
-    "swamp": "music_wood", "roccaluce": "music_wood",
-    "redfountain": "music_wood",
-    "cloudtower": "music_tower", "siege_cloudtower": "music_tower",
-    "battle_alfea": "music_tower",
+# Each realm has its own theme and its own ambient bed.  Home realms use the
+# fairy's realm; a besieged realm swaps the theme for the war track but keeps
+# the ambience, so it is recognisably the same place.
+REALM_AUDIO = {
+    "home_bloom":       ("gardenia", "day"),
+    "home_stella":      ("solaria", "day"),
+    "home_flora":       ("lynphea", "forest"),
+    "home_musa":        ("melody", "day"),
+    "home_tecna":       ("zenith", "machine"),
+    "home_aisha":       ("andros", "water"),
+    "alfea":            ("alfea", "day"),
+    "swamp":            ("swamp", "swamp"),
+    "cloudtower":       ("cloudtower", "dark"),
+    "roccaluce":        ("roccaluce", "ice"),
+    "redfountain":      ("redfountain", "day"),
+    "pixievillage":     ("pixievillage", "forest"),
+    "siege_cloudtower": ("siege", "dark"),
+    "battle_alfea":     ("battle", "dark"),
 }
 
 
-def music_for(level_key: str) -> str:
-    """Peaceful home realms get the bright track, sieges get the dark one."""
-    if level_key.startswith("home_"):
-        return "music_alfea"
-    if level_key.startswith("siege_"):
-        return "music_tower"
-    return MUSIC_FOR.get(level_key, "music_alfea")
+def realm_audio(level_key: str) -> tuple:
+    """(music, ambience) stream names for a level."""
+    if level_key in REALM_AUDIO:
+        music, ambience = REALM_AUDIO[level_key]
+    elif level_key.startswith("siege_"):
+        # A besieged home realm: war music over the realm's own ambience.
+        _, ambience = REALM_AUDIO.get("home_" + level_key[6:],
+                                      ("alfea", "day"))
+        music = "siege"
+    else:
+        music, ambience = "alfea", "day"
+    return "music_" + music, "ambience_" + ambience
 
 
 def _portal_model(color: Vec4) -> NodePath:
@@ -277,6 +294,7 @@ class Game(ShowBase):
         self.clear_screen()
         self._title_backdrop()
         self.audio.play_music("music_menu")
+        self.audio.play_ambience(None)
         text(self.screen, "WINX CLUB", 0, 0.62, 0.16, TITLE_COLOR,
              TextNode.ACenter)
         text(self.screen, "Magic of Alfea", 0, 0.49, 0.075,
@@ -712,6 +730,11 @@ class Game(ShowBase):
         keep_lives = getattr(self, "lives", C.START_LIVES)
         self.player = Player(self.world_root, self.spec, self.solids,
                              Vec3(level.start))
+        # The fairy's magic sounds like her element, on the way out and on
+        # impact.
+        self.player.audio = self.audio
+        self.effects.hit_sound = (
+            lambda: self.audio.play_variant("hit", self.spec.key, 0.45))
         self.player.score = keep_score
         self.player.lives = keep_lives
         self.player.cam_yaw = 0.0
@@ -754,7 +777,9 @@ class Game(ShowBase):
         self.death_timer = 0.0
         self.finish_timer = 0.0
         self.level_time = 0.0
-        self.audio.play_music(music_for(level.key))
+        music, ambience = realm_audio(level.key)
+        self.audio.play_music(music)
+        self.audio.play_ambience(ambience)
 
         # Frame the camera on the level while the chapter's dialogue plays.
         self.player.update_camera(self.camera, 1.0)
@@ -1030,6 +1055,7 @@ class Game(ShowBase):
                 self.enemy_list.append(
                     E.spawn(kind, self.world_root, pos, self.solids))
 
+        self._update_reticle()
         for it in self.interactables:
             it.update(dt, self)
         self._update_pickups(dt, player)
@@ -1167,6 +1193,25 @@ class Game(ShowBase):
             if len(members) > 1:
                 return "%d / %d" % (done, len(members))
         return ""
+
+    def _update_reticle(self) -> None:
+        """Put the crosshair where the shot will actually go.
+
+        A crosshair pinned to the middle of the screen would lie: the aim is
+        deliberately not along the camera's view direction, and it snaps to a
+        locked target. So project the real aim point into screen space.
+        """
+        p = self.player
+        if p is None or not p.alive:
+            return
+        target = p.aim_point(self.enemy_list)
+        rel = self.camera.getRelativePoint(self.render, target)
+        out = Point2()
+        if not self.camLens.project(rel, out):
+            self.hud.set_reticle(None, False)
+            return
+        self.hud.set_reticle((out.getX() * self.getAspectRatio(), out.getY()),
+                             p.lock_target is not None)
 
     def _update_prompt(self) -> None:
         it = self.nearest_interactable()

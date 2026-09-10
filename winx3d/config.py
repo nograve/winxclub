@@ -29,7 +29,7 @@ PLAYER_HEIGHT = 2.6
 # --- Camera ------------------------------------------------------------------
 CAM_DISTANCE = 14.0
 CAM_HEIGHT = 5.0
-CAM_PITCH = -12.0
+CAM_PITCH = -8.0
 CAM_MIN_PITCH, CAM_MAX_PITCH = -55.0, 25.0
 CAM_LAG = 8.0              # higher = snappier
 MOUSE_SENS = 22.0
@@ -38,8 +38,8 @@ KEY_TURN_SPEED = 130.0
 # --- Combat ------------------------------------------------------------------
 MAX_HEALTH = 6
 MAX_MAGIC = 100.0
-MAGIC_REGEN = 7.0          # per second
-BOLT_COST = 12.0
+MAGIC_REGEN = 11.0         # per second
+BOLT_COST = 7.0            # sustainable fire; flying is the drain
 BOLT_SPEED = 46.0
 BOLT_LIFE = 1.6
 BOLT_DAMAGE = 1.0

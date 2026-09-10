@@ -83,6 +83,8 @@ class EffectSystem:
         # Interactables hit by a bolt this frame; the game applies them after
         # the projectile pass so a puzzle cannot mutate the list mid-iteration.
         self.pending_shots: list = []
+        # Set by the game so an impact can sound like the fairy's element.
+        self.hit_sound = None
 
     # -- construction -------------------------------------------------------
     def set_solids(self, boxes) -> None:
@@ -213,6 +215,8 @@ class EffectSystem:
                     if (pos - e.center()).length() < p.radius + e.radius:
                         e.take_damage(p.damage, self)
                         self.burst(pos, e.hit_color, 9, 6.5, 0.34)
+                        if self.hit_sound is not None:
+                            self.hit_sound()
                         hit = True
                         break
                 if not hit:

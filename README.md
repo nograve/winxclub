@@ -51,7 +51,7 @@ Run `python3 main.py --help` for every option (`--fullscreen`, `--width`,
 | Mouse, or `Q` / `E`    | Swing the camera                                  |
 | `Shift`                | Run                                               |
 | `Space`                | Jump — **hold in the air to fly**                 |
-| `J` / left mouse       | Magic bolt                                        |
+| `J` / left mouse       | Magic bolt — soft lock-on to the nearest target    |
 | `K` / right mouse      | Magic blast (close range, expensive)              |
 | `F`                    | Signature spell, once the magic meter is full     |
 | `Tab` / `M` / `N`      | Toggle mouse look / music / sound effects         |
@@ -59,7 +59,12 @@ Run `python3 main.py --help` for every option (`--fullscreen`, `--width`,
 | `F12`                  | Screenshot                                        |
 
 Flying drains magic, and so does every spell — let the meter refill between
-fights. Magic bolts softly lock on to the nearest enemy in front of you.
+fights.
+
+The crosshair marks where the shot will actually land, not the middle of the
+screen: the aim is deliberately level at rest rather than following the
+camera's downward tilt. When an enemy is inside the assist cone the crosshair
+turns red and snaps to them, and the bolt follows.
 
 ---
 
@@ -185,6 +190,30 @@ the ogre, who whistles up ghouls once he is hurt. **The Army of Decay** — slow
 heavy, and it sheds rot as it comes. **The Trix** — Icy, Darcy and Stormy, each
 with three attack phases keyed to her own element.
 
+## Sound
+
+Every note in the game is synthesised on first run and cached — there are no
+audio files in the repository.
+
+**A theme per realm.** Fifteen tracks, each with its own scale, tempo and
+instruments: Solaria gets brass fanfares in Lydian, Lynphea a slow pentatonic
+flute, Melody the busiest track in the game (it is the realm of music), Zenith
+a fast square-wave arpeggio, Andros wide flowing pads, Cloud Tower a driving
+minor, Roccaluce sparse high glass. A besieged realm swaps to the war theme
+but keeps its own ambience, so it still sounds like the same place.
+
+**An ambient bed per environment** — daylight, forest, swamp, ice, machinery,
+open water, dark halls — running quietly under the music, with occasional
+incidents layered on: birdsong, drips, distant beeps, creaking ice.
+
+**Magic that sounds like its element.** Each fairy has her own bolt and impact:
+Bloom's Dragon Flame is a noisy saw roar, Stella's a bright rising chime,
+Flora's a woody pluck, Musa's a clean tone burst, Tecna's a digital pulse,
+Aisha's a rising watery sweep.
+
+Everything degrades safely: with no audio device, or with `--no-audio`, the
+whole layer turns into no-ops rather than taking the game down.
+
 ## Why Panda3D?
 
 The brief was a 3D game that runs on old PCs and on all three desktop
@@ -218,8 +247,10 @@ Windows, then the software renderer, rather than failing to start.
   collectible and puzzle object is settled onto the surface actually beneath
   it and nudged clear of posts, so nothing floats or ends up inside a wall
   when a builder changes.
-- **Procedural audio.** Sound effects and music are synthesised to small mono
-  22 kHz WAVs on first run and cached.
+- **Procedural audio.** 47 sounds — effects, fifteen realm themes and seven
+  ambient beds — are synthesised to mono WAVs on first run (about 13 seconds,
+  once) and cached. Ambience renders at half rate, which is inaudible for a
+  quiet bed and halves its cost.
 
 Consequently the repository contains no binary assets at all — it is pure
 source.
@@ -241,7 +272,7 @@ winx3d/
   enemies.py          Ghoul / Wisp / Troll / Decay / Knut / Trix AI
   effects.py          Projectiles, particles, pickups
   hud.py              Heads-up display
-  audio.py            Sound and music synthesis
+  audio.py            Instrument voices, realm themes, ambience, elemental SFX
   app.py              Screens, level flow, the frame loop
 tests/smoke.py        Headless playthrough test (no display needed)
 tools/capture.py      Renders the screenshots in this README
@@ -259,12 +290,14 @@ The whole game can be played through with no display attached, which is how it
 is tested:
 
 ```sh
-python3 tests/smoke.py      # 140 checks: lore integrity, all six campaigns
+python3 tests/smoke.py      # 178 checks: lore integrity, all six campaigns
                             # and every home realm, placement validation for
                             # every pickup and puzzle object, each puzzle type
                             # end to end, menus, unlocks, the story system,
-                            # movement, collision, flight, combat, death,
-                            # portals, the Trix, teardown
+                            # movement, collision, flight, free-aim shooting,
+                            # combat, death, portals, the Trix, per-realm
+                            # audio (including measuring the rendered
+                            # samples), teardown
 python3 tools/capture.py    # regenerate screenshots/
 ```
 

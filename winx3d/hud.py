@@ -115,12 +115,16 @@ class HUD:
         self.gem_label = "GEMS"
 
         # --- reticle ------------------------------------------------------
+        # Moved every frame to sit on the actual aim point, and it turns and
+        # brightens when a target is locked.
         self.reticle = NodePath("reticle")
         self.reticle.reparentTo(base.aspect2d)
-        card(self.reticle, -0.016, -0.0025, 0.032, 0.005,
-             (1, 1, 1, 0.55), "rh")
-        card(self.reticle, -0.0025, -0.016, 0.005, 0.032,
-             (1, 1, 1, 0.55), "rv")
+        self._reticle_bars = [
+            card(self.reticle, -0.020, -0.0025, 0.040, 0.005,
+                 (1, 1, 1, 0.60), "rh"),
+            card(self.reticle, -0.0025, -0.020, 0.005, 0.040,
+                 (1, 1, 1, 0.60), "rv")]
+        self.reticle_locked = False
 
     # -- API ----------------------------------------------------------------
     def show_banner(self, title: str, sub: str = "", seconds: float = 2.6)\
@@ -132,6 +136,20 @@ class HUD:
     def set_gem_label(self, name: str) -> None:
         """Each chapter collects something different - pixies, pages, shards."""
         self.gem_label = name.upper() + "S"
+
+    def set_reticle(self, pos, locked: bool) -> None:
+        if pos is None:
+            self.reticle.hide()
+            return
+        self.reticle.show()
+        self.reticle.setPos(pos[0], 0, pos[1])
+        if locked != self.reticle_locked:
+            self.reticle_locked = locked
+            self.reticle.setR(45.0 if locked else 0.0)
+            self.reticle.setScale(1.35 if locked else 1.0)
+            for bar in self._reticle_bars:
+                bar.setColor(*( (1.0, 0.45, 0.45, 0.95) if locked
+                                else (1, 1, 1, 0.60) ))
 
     def set_prompt(self, msg: str) -> None:
         self.prompt.setText(msg)

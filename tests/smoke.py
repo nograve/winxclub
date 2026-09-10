@@ -195,6 +195,86 @@ def main():
             if openers and not drivers:
                 check("%s/%s has a driver" % (lv.key, name), False)
 
+    print("\n[1e] Audio: a theme and a bed for every realm")
+    from winx3d import audio as A
+    from winx3d.app import realm_audio
+    tracks = {k for k in A.GENERATORS if k.startswith("music_")}
+    beds = {k for k in A.GENERATORS if k.startswith("ambience_")}
+    check("there is a theme per realm and location", len(tracks) >= 14,
+          "%d" % len(tracks))
+    check("there are ambient beds", len(beds) >= 6, "%d" % len(beds))
+    missing = []
+    assigned_music, assigned_beds = set(), set()
+    for lv in all_levels:
+        music, bed = realm_audio(lv.key)
+        assigned_music.add(music)
+        assigned_beds.add(bed)
+        if music not in A.GENERATORS:
+            missing.append(lv.key + " -> " + music)
+        if bed not in A.GENERATORS:
+            missing.append(lv.key + " -> " + bed)
+    check("every level maps to sounds that exist", not missing, str(missing))
+    check("the six home realms have six different themes",
+          len({realm_audio("home_" + f.key)[0]
+               for f in characters.ROSTER}) == 6)
+    check("home realms have distinct ambience",
+          len({realm_audio("home_" + f.key)[1]
+               for f in characters.ROSTER}) >= 4)
+    check("a besieged realm keeps its own ambience",
+          realm_audio("siege_tecna")[1] == realm_audio("home_tecna")[1])
+    check("a besieged realm changes its music",
+          realm_audio("siege_tecna")[0] != realm_audio("home_tecna")[0])
+    check("most themes are actually used", len(assigned_music) >= 12,
+          "%d" % len(assigned_music))
+
+    for f in characters.ROSTER:
+        ok = ("shoot_" + f.key in A.GENERATORS
+              and "hit_" + f.key in A.GENERATORS)
+        check("%-7s has her own magic sound" % f.name, ok)
+    check("elemental sounds differ per fairy",
+          len({tuple(A.ELEMENTS[f.key]) for f in characters.ROSTER}) == 6)
+
+    cached = A.ensure_sounds()
+    on_disk = {n[:-4] for n in os.listdir(cached) if n.endswith(".wav")}
+    check("every sound was generated to disk",
+          set(A.GENERATORS) <= on_disk,
+          str(sorted(set(A.GENERATORS) - on_disk))[:120])
+    # Structure is not enough: measure the samples. A bug in the envelope
+    # once made every chord and every percussion-free track render pure
+    # silence, and nothing above would have noticed.
+    import array as _array
+    import wave as _wave
+    bad_wav, silent, clipping, sigs = [], [], [], {}
+    for name in sorted(A.GENERATORS):
+        try:
+            with _wave.open(os.path.join(cached, name + ".wav")) as fh:
+                frames = fh.getnframes()
+                if frames < 500 or fh.getnchannels() != 1:
+                    bad_wav.append(name)
+                    continue
+                raw = _array.array("h")
+                raw.frombytes(fh.readframes(frames))
+        except Exception:
+            bad_wav.append(name)
+            continue
+        rms = math.sqrt(sum(float(s) * s for s in raw) / len(raw)) / 32768.0
+        peak = max(abs(s) for s in raw) / 32768.0
+        if rms < 0.005:
+            silent.append("%s (rms %.4f)" % (name, rms))
+        if peak > 0.995:
+            clipping.append(name)
+        sigs[name] = rms
+    check("every generated file is a readable mono WAV", not bad_wav,
+          str(bad_wav[:5]))
+    check("no generated sound is silent", not silent, str(silent[:4]))
+    check("no generated sound clips", not clipping, str(clipping[:4]))
+    themes = sorted(k for k in A.GENERATORS if k.startswith("music_"))
+    check("every theme carries real signal",
+          all(sigs.get(k, 0) > 0.02 for k in themes),
+          str([k for k in themes if sigs.get(k, 0) <= 0.02])[:120])
+    check("themes are not all the same rendering",
+          len({round(sigs[k], 3) for k in themes}) >= len(themes) // 2)
+
     print("\n[2] Title and menus")
     h.step(3)
     check("starts on the title screen", g.state == "title")
@@ -309,6 +389,70 @@ def main():
     h.step(2, keys={"special": False})
     check("blast damages a nearby enemy", near.health < hp2)
 
+    print("\n[6b] Free-aim shooting")
+    # Regression: aiming used to follow the camera's downward tilt from chest
+    # height, so an unlocked bolt buried itself in the ground after ~2 units.
+    for e in g.enemy_list:
+        if e.alive:
+            e.root.setPos(e.root.getPos() + Vec3(0, 400, 0))
+    p.root.setPos(0, -40, 0)
+    p.vel = Vec3(0, 0, 0)
+    p.cam_yaw, p.cam_pitch = 0.0, C.CAM_PITCH
+    p.magic = C.MAX_MAGIC
+    h.step(4)
+    check("neutral camera aims level", abs(p.aim_pitch) < 0.01,
+          "%.2f" % p.aim_pitch)
+    aim = p.aim_direction(g.enemy_list)
+    check("an unlocked shot is not fired into the ground", abs(aim.z) < 0.05,
+          "z=%.3f" % aim.z)
+    h.step(3, keys={"attack": True})
+    h.step(1, keys={"attack": False})
+    bolt = g.effects.projectiles[0]
+    start = Vec3(bolt.np.getPos())
+    far = start
+    for _ in range(120):
+        h.step(1)
+        if not g.effects.projectiles:
+            break
+        far = Vec3(g.effects.projectiles[0].np.getPos())
+    reach = (far - start).length()
+    check("a level shot carries across open ground", reach > 20.0,
+          "%.1f units" % reach)
+    check("it stays at the height it was fired", abs(far.z - start.z) < 1.0,
+          "dz=%.2f" % (far.z - start.z))
+
+    # Looking up and down moves the aim by the same amount.
+    p.cam_pitch = C.CAM_PITCH + 20.0
+    check("looking up raises the aim",
+          p.aim_direction(g.enemy_list).z > 0.3)
+    p.cam_pitch = C.CAM_PITCH - 20.0
+    check("looking down lowers the aim",
+          p.aim_direction(g.enemy_list).z < -0.3)
+    p.cam_pitch = C.CAM_PITCH
+
+    # The aim must not depend on the camera being pulled in by a wall.
+    aim_free = p.aim_direction(g.enemy_list)
+    p.cam_pos = p.center() + Vec3(0, -2.0, 0.5)     # camera jammed against us
+    check("a wall behind the player does not tilt the shot",
+          abs(p.aim_direction(g.enemy_list).z - aim_free.z) < 0.01)
+
+    # Lock-on and the reticle that reports it.
+    foe = next(e for e in g.enemy_list if e.alive)
+    foe.root.setPos(0, -16, 0)
+    h.step(2)
+    p.aim_direction(g.enemy_list)
+    check("a target ahead is locked", p.lock_target is foe)
+    check("the aim point is the locked target",
+          (p.aim_point(g.enemy_list) - foe.center()).length() < 0.01)
+    g._update_reticle()
+    check("the reticle marks the lock", g.hud.reticle_locked)
+    check("the reticle is on screen",
+          abs(g.hud.reticle.getX()) < 2.0 and abs(g.hud.reticle.getZ()) < 1.0)
+    foe.root.setPos(0, 400, 0)
+    h.step(2)
+    p.aim_direction(g.enemy_list)
+    check("the lock clears when the target leaves", p.lock_target is None)
+
     print("\n[7] Transformation uses the fairy's signature spell")
     check("Bloom's ultimate is the Dragon Flame",
           p.spec.ultimate == "DRAGON FLAME")
@@ -378,7 +522,9 @@ def main():
     p.root.setPos(rune.center() + Vec3(0, -11.0, -1.0))
     aim = rune.center() - p.center()
     p.cam_yaw = math.degrees(math.atan2(-aim.x, aim.y))
-    p.cam_pitch = math.degrees(math.asin(max(-1, min(1, aim.z / aim.length()))))
+    # Aim pitch is measured from neutral camera tilt, not absolute.
+    p.cam_pitch = math.degrees(
+        math.asin(max(-1, min(1, aim.z / aim.length())))) + C.CAM_PITCH
     h.step(2)
     h.step(4, keys={"attack": True})
     h.step(1, keys={"attack": False})
@@ -509,6 +655,25 @@ def main():
               and g.player is not None and len(g.enemy_list) > 0)
         check("chapter %2d: %-24s" % (ch.number, ch.title), ok,
               "state=%s" % g.state)
+
+    print("\n[9c] The game drives the audio channels")
+    g.load_level(0)
+    h.skip_story()
+    h.step(2)
+    want_music, want_bed = realm_audio(g.level.key)
+    check("loading a level selects its theme",
+          g.audio.current_music == want_music,
+          "%s != %s" % (g.audio.current_music, want_music))
+    check("loading a level selects its ambience",
+          g.audio.current_ambience == want_bed)
+    g.load_level(3)
+    h.skip_story()
+    h.step(2)
+    check("moving to another realm swaps the theme",
+          g.audio.current_music == realm_audio(g.level.key)[0])
+    check("the player can make her own noise", g.player.audio is not None)
+    check("impacts are wired to the fairy's element",
+          g.effects.hit_sound is not None)
 
     print("\n[10b] Each fairy's own chapters load and run")
     for f in characters.ROSTER:
