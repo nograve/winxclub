@@ -11,6 +11,7 @@ import random
 
 from panda3d.core import NodePath, TransparencyAttrib, Vec3, Vec4
 
+from .characters import _seg
 from .geometry import MeshBuilder, shade
 
 _rng = random.Random(3)
@@ -204,11 +205,16 @@ class Wisp(Enemy):
 
     def build_model(self) -> None:
         mb = MeshBuilder()
-        mb.sphere((0, 0, 0), 0.62, self.core, segments=10, rings=8)
+        mb.sphere((0, 0, 0), 0.50, self.core, segments=_seg(10), rings=8)
+        mb.sphere((0, 0, 0), 0.30, Vec4(1.0, 0.94, 1.0, 1),
+                  segments=_seg(9), rings=7)
+        for sx in (-0.16, 0.16):                                  # two eyes
+            mb.sphere((sx, -0.38, 0.10), 0.085, Vec4(0.16, 0.06, 0.24, 1),
+                      segments=6, rings=5)
         halo = MeshBuilder()
-        halo.sphere((0, 0, 0), 1.05, Vec4(self.core[0], self.core[1],
-                                          self.core[2], 0.30),
-                    segments=10, rings=7)
+        halo.sphere((0, 0, 0), 0.86, Vec4(self.core[0], self.core[1],
+                                          self.core[2], 0.22),
+                    segments=_seg(10), rings=7)
         h = halo.build("wisp_halo")
         h.setTransparency(TransparencyAttrib.MAlpha)
         h.setDepthWrite(False)
@@ -279,22 +285,47 @@ class Troll(Enemy):
 
     def build_model(self) -> None:
         mb = MeshBuilder()
-        mb.cylinder((0, 0, 0.0), 0.55, 0.42, 1.25, self.hide, segments=9)
-        mb.box((0, 0, 1.05), (1.1, 0.8, 0.5), self.cloth)
-        mb.sphere((0, 0, 2.05), 1.15, self.hide, segments=11, rings=8,
-                  squash=0.9)
-        mb.sphere((0, 0, 3.05), 0.72, self.hide, segments=10, rings=7)
-        for sx in (-0.26, 0.26):
-            mb.sphere((sx, -0.60, 3.10), 0.13, Vec4(0.95, 0.25, 0.2, 1),
+        rng = random.Random(17)
+        for sx in (-0.42, 0.42):                                  # legs
+            mb.lathe((sx, 0, 0.0), [(0.0, 0.30), (0.50, 0.26), (1.10, 0.34)],
+                     self.hide, segments=_seg(8))
+            mb.sphere((sx, -0.10, 0.06), 0.34, shade(self.hide, 0.92),
+                      segments=_seg(7), rings=5, squash=0.6)
+        mb.lathe((0, 0, 0.95),                                    # torso
+                 [(0.0, 0.62), (0.40, 0.86), (0.95, 0.92), (1.35, 0.74),
+                  (1.60, 0.56)],
+                 self.hide, segments=_seg(11), squash_y=0.88)
+        mb.lathe((0, 0, 0.92), [(0.0, 0.68), (0.34, 0.74)], self.cloth,
+                 segments=_seg(11), cap_top=False, cap_bottom=False)
+        mb.lathe((0, 0, 2.42),                                    # head
+                 [(-0.24, 0.34), (-0.06, 0.58), (0.14, 0.66), (0.34, 0.56),
+                  (0.46, 0.30)],
+                 self.hide, segments=_seg(10), squash_y=0.94)
+        mb.lathe((0, -0.44, 2.40), [(0.0, 0.24), (0.18, 0.28), (0.32, 0.18)],
+                 shade(self.hide, 1.08), segments=_seg(8))         # snout
+        for sx in (-0.24, 0.24):
+            mb.sphere((sx, -0.44, 2.72), 0.115, Vec4(0.95, 0.30, 0.22, 1),
+                      segments=_seg(7), rings=5)
+            mb.box((sx, -0.38, 2.86), (0.26, 0.12, 0.07),
+                   shade(self.hide, 0.6))
+            mb.lathe((sx * 0.8, -0.50, 2.28), [(0.0, 0.025), (0.20, 0.065)],
+                     Vec4(0.90, 0.88, 0.78, 1), segments=5, cap_top=False)
+        for _ in range(10):                                       # hide bumps
+            a = rng.uniform(0, math.tau)
+            z = rng.uniform(1.0, 2.2)
+            mb.sphere((math.cos(a) * 0.85, math.sin(a) * 0.75, z),
+                      rng.uniform(0.06, 0.12), shade(self.hide, 0.86),
                       segments=6, rings=5)
-        mb.cylinder((0, -0.55, 2.85), 0.28, 0.20, 0.45, shade(self.hide, 0.85),
-                    segments=7)
         arm = MeshBuilder()
-        for sx in (-1.35, 1.35):
-            arm.sphere((sx, 0, 2.35), 0.42, self.hide, segments=8, rings=6)
-            arm.cylinder((sx, 0, 1.0), 0.34, 0.42, 1.35, self.hide, segments=8)
-            arm.sphere((sx, 0, 0.95), 0.48, shade(self.hide, 0.9),
-                       segments=8, rings=6)
+        for sx in (-1.02, 1.02):
+            arm.sphere((sx, 0, 2.28), 0.44, self.hide, segments=_seg(8),
+                       rings=6)
+            arm.sphere((sx * 0.68, 0, 2.32), 0.36, shade(self.hide, 1.04),
+                       segments=_seg(7), rings=5)
+            arm.lathe((sx, 0, 0.95), [(0.0, 0.34), (0.70, 0.30), (1.33, 0.38)],
+                      self.hide, segments=_seg(8))
+            arm.sphere((sx, -0.04, 0.90), 0.44, shade(self.hide, 0.92),
+                       segments=_seg(8), rings=6)
         mb.build("troll_mesh").reparentTo(self.model)
         arms = arm.build("troll_arms")
         arms.reparentTo(self.model)
@@ -374,37 +405,113 @@ class Trix(Enemy):
         self.shield = 0.0
         self.summon_request = 0
 
+    # Per-sister silhouette, so they are not three palette swaps.
+    hair_style = "straight"      # straight | spiky | wild
+    gown = "long"                # long | slim | short
+    charm = "shard"              # the shape orbiting her
+
     def build_model(self) -> None:
         mb = MeshBuilder()
-        mb.cylinder((0, 0, -2.4), 0.0, 1.5, 2.6, self.robe, segments=14,
-                    cap_top=False)                                 # trailing gown
-        mb.cylinder((0, 0, 0.2), 0.75, 0.55, 0.9, shade(self.robe, 1.15),
-                    segments=12)
-        mb.sphere((0, 0, 1.55), 0.55, Vec4(0.92, 0.86, 0.88, 1), segments=12,
-                  rings=9)
-        mb.sphere((0, 0.1, 1.75), 0.60, self.hair, segments=12, rings=9,
-                  squash=1.05)
+        skin = Vec4(0.93, 0.86, 0.86, 1)
+
+        # --- gown ---------------------------------------------------------
+        if self.gown == "slim":
+            profile = [(-2.6, 0.62), (-1.6, 0.72), (-0.7, 0.66), (0.0, 0.52),
+                       (0.55, 0.44), (0.95, 0.40)]
+        elif self.gown == "short":
+            profile = [(-1.15, 1.10), (-0.75, 0.86), (-0.25, 0.56),
+                       (0.30, 0.46), (0.75, 0.42), (0.95, 0.38)]
+        else:
+            profile = [(-2.9, 1.45), (-1.8, 1.10), (-0.9, 0.74), (0.0, 0.54),
+                       (0.55, 0.46), (0.95, 0.40)]
+        mb.lathe((0, 0, 0), profile, self.robe, segments=_seg(13),
+                 cap_top=False, squash_y=0.92)
+        mb.lathe((0, 0, 0.95), [(0.0, 0.40), (0.22, 0.30), (0.34, 0.22)],
+                 skin, segments=_seg(10), cap_bottom=False, cap_top=False)
+        mb.box((0, 0, 0.10), (0.95, 0.70, 0.12), shade(self.ice, 0.9))
+        for sx in (-1, 1):                                        # arms
+            mb.lathe((sx * 0.62, 0, 0.30),
+                     [(0.0, 0.09), (0.55, 0.12), (0.86, 0.17)],
+                     shade(self.robe, 1.15), segments=_seg(8))
+            mb.sphere((sx * 0.66, 0, 0.24), 0.10, skin, segments=6, rings=5)
+
+        # --- head ---------------------------------------------------------
+        mb.lathe((0, 0, 1.25),
+                 [(-0.06, 0.16), (0.08, 0.30), (0.24, 0.38), (0.40, 0.36),
+                  (0.52, 0.26), (0.60, 0.11)],
+                 skin, segments=_seg(12), squash_y=0.94)
         for sx in (-1, 1):
-            mb.cylinder((sx * 0.42, 0.18, 1.55), 0.16, 0.05, -1.5, self.hair,
-                        segments=7)
-            mb.sphere((sx * 0.21, -0.45, 1.58), 0.10,
-                      Vec4(0.15, 0.35, 0.6, 1), segments=6, rings=5)
-            mb.cylinder((sx * 0.72, 0, 1.05), 0.16, 0.12, -1.0,
-                        shade(self.robe, 1.2), segments=7)
-        # Ice shards orbiting her — the boss's silhouette read.
+            mb.disc((sx * 0.145, -0.345, 1.52), 0.085,
+                    Vec4(0.98, 0.97, 0.98, 1), _seg(9), squash=1.1)
+            mb.disc((sx * 0.145, -0.355, 1.51), 0.050, self.ice, _seg(9))
+            mb.disc((sx * 0.145, -0.362, 1.50), 0.024,
+                    Vec4(0.08, 0.07, 0.10, 1), 7)
+            # Slanted brows: none of the three is pleased to see you.
+            mb.box((sx * 0.16, -0.330, 1.63), (0.17, 0.03, 0.028),
+                   shade(self.hair, 0.55))
+        mb.disc((0, -0.340, 1.38), 0.050, Vec4(0.70, 0.25, 0.35, 1), 8,
+                squash=0.45)
+
+        # --- hair ---------------------------------------------------------
+        mb.lathe((0, 0.10, 1.30),
+                 [(0.10, 0.35), (0.26, 0.395), (0.42, 0.395), (0.52, 0.34),
+                  (0.60, 0.23), (0.66, 0.10)],
+                 self.hair, segments=_seg(12), cap_bottom=False)
+        if self.hair_style == "spiky":
+            # Icy: hair like a shattered icicle crown.
+            for i in range(9):
+                a = math.tau * i / 9
+                mb.lathe((math.cos(a) * 0.34, 0.10 + math.sin(a) * 0.34, 1.78),
+                         [(0.0, 0.13), (0.45, 0.07), (0.85, 0.0)],
+                         shade(self.hair, 1.1), segments=5, cap_top=False)
+            for sx in (-1, 1):
+                mb.lathe((sx * 0.34, 0.16, 1.42),
+                         [(-1.10, 0.0), (-0.5, 0.12), (0.0, 0.17)],
+                         self.hair, segments=6)
+        elif self.hair_style == "wild":
+            # Stormy: a storm cloud of frizz.
+            for _ in range(26):
+                a = _rng.uniform(0, math.tau)
+                r = _rng.uniform(0.30, 0.62)
+                z = _rng.uniform(1.42, 2.05)
+                mb.sphere((math.cos(a) * r, 0.10 + math.sin(a) * r * 0.9, z),
+                          _rng.uniform(0.17, 0.30), self.hair,
+                          segments=_seg(7), rings=5)
+        else:
+            # Darcy: long, straight, and very heavy.
+            mb.lathe((0, 0.24, 1.52),
+                     [(-2.05, 0.24), (-1.30, 0.36), (-0.55, 0.40),
+                      (0.0, 0.34)],
+                     self.hair, segments=_seg(11), cap_top=False)
+            for sx in (-1, 1):
+                mb.lathe((sx * 0.33, 0.04, 1.56),
+                         [(-1.45, 0.05), (-0.7, 0.11), (0.04, 0.14)],
+                         self.hair, segments=6)
+
+        # --- her charm, orbiting ------------------------------------------
         shards = MeshBuilder()
         for i in range(6):
             a = math.tau * i / 6
-            shards.cylinder((math.cos(a) * 2.6, math.sin(a) * 2.6, -0.4),
-                            0.30, 0.0, 1.6, Vec4(self.ice[0], self.ice[1],
-                                                 self.ice[2], 0.75),
-                            segments=6)
-        s = shards.build("witch_shards")
+            x, y = math.cos(a) * 2.6, math.sin(a) * 2.6
+            col = Vec4(self.ice[0], self.ice[1], self.ice[2], 0.78)
+            if self.charm == "orb":
+                shards.sphere((x, y, 0.1), 0.34, col, segments=_seg(8),
+                              rings=6)
+            elif self.charm == "bolt":
+                for k in range(3):
+                    shards.box((x + (k - 1) * 0.16, y, 0.1 + (k - 1) * 0.30),
+                               (0.16, 0.16, 0.34), col)
+            else:
+                shards.lathe((x, y, -0.5),
+                             [(0.0, 0.0), (0.55, 0.26), (1.6, 0.0)],
+                             col, segments=6)
+        s = shards.build("trix_charm")
         s.setTransparency(TransparencyAttrib.MAlpha)
+        s.setTwoSided(True)
         s.setLightOff()
         s.reparentTo(self.model)
         self.parts["shards"] = s
-        mb.build("witch_mesh").reparentTo(self.model)
+        mb.build("trix_mesh").reparentTo(self.model)
 
     def update(self, dt, player, effects) -> None:
         self.t += dt
@@ -490,6 +597,9 @@ class Icy(Trix):
     ice = Vec4(0.62, 0.88, 1.00, 1)
     hair = Vec4(0.85, 0.93, 1.00, 1)
     hit_color = Vec4(0.62, 0.88, 1.00, 1)
+    hair_style = "spiky"
+    gown = "long"
+    charm = "shard"
 
     def cast(self, phase, d, player, effects) -> None:
         if phase == 1:
@@ -511,8 +621,11 @@ class Darcy(Trix):
     speed = 9.0
     robe = Vec4(0.34, 0.24, 0.46, 1)
     ice = Vec4(0.66, 0.42, 0.92, 1)
-    hair = Vec4(0.48, 0.34, 0.62, 1)
+    hair = Vec4(0.34, 0.24, 0.44, 1)
     hit_color = Vec4(0.66, 0.42, 0.92, 1)
+    hair_style = "straight"
+    gown = "slim"
+    charm = "orb"
 
     def cast(self, phase, d, player, effects) -> None:
         if phase == 1:
@@ -536,8 +649,11 @@ class Stormy(Trix):
     speed = 9.5
     robe = Vec4(0.44, 0.24, 0.42, 1)
     ice = Vec4(0.96, 0.56, 0.88, 1)
-    hair = Vec4(0.70, 0.30, 0.55, 1)
+    hair = Vec4(0.62, 0.26, 0.50, 1)
     hit_color = Vec4(0.96, 0.56, 0.88, 1)
+    hair_style = "wild"
+    gown = "short"
+    charm = "bolt"
 
     def cast(self, phase, d, player, effects) -> None:
         if phase == 1:
@@ -563,28 +679,60 @@ class Ghoul(Enemy):
     hit_color = Vec4(0.60, 0.45, 0.80, 1)
     eye_height = 1.2
 
-    robe = Vec4(0.26, 0.22, 0.34, 1)
-    bone = Vec4(0.72, 0.70, 0.62, 1)
-    glow = Vec4(0.85, 0.35, 0.95, 1)
+    robe = Vec4(0.47, 0.41, 0.60, 1)
+    bone = Vec4(0.80, 0.78, 0.70, 1)
+    glow = Vec4(0.95, 0.45, 1.00, 1)
 
     def build_model(self) -> None:
         mb = MeshBuilder()
-        # Hooded, hunched, and deliberately taller than it is wide.
-        mb.cylinder((0, 0, 0.0), 0.30, 0.52, 1.55, self.robe, segments=9)
-        mb.cylinder((0, 0, 1.55), 0.52, 0.30, 0.45, shade(self.robe, 1.15),
-                    segments=9)
-        mb.sphere((0, 0, 1.92), 0.34, self.bone, segments=9, rings=7)
-        mb.sphere((0, -0.06, 2.02), 0.37, shade(self.robe, 0.85), segments=10,
-                  rings=7, squash=0.95)                       # hood
-        for sx in (-0.13, 0.13):
-            mb.sphere((sx, -0.26, 1.92), 0.075, self.glow, segments=6, rings=5)
+        # A hunched robe that flares to a ragged hem, with nothing inside the
+        # hood but two lights.
+        # Narrow the robe into a neck so the hood reads as a head rather
+        # than the top of a sack.
+        mb.lathe((0, 0, 0.0),
+                 [(0.0, 0.62), (0.30, 0.50), (0.80, 0.44), (1.22, 0.48),
+                  (1.50, 0.36), (1.68, 0.24)],
+                 self.robe, segments=_seg(11), cap_bottom=False)
+        # A pale mantle over the shoulders, for contrast against the robe.
+        mb.lathe((0, 0, 1.14),
+                 [(0.0, 0.58), (0.16, 0.46), (0.30, 0.30)],
+                 shade(self.robe, 1.45), segments=_seg(11), cap_top=False)
+        # Ragged hem: spikes of cloth hanging past the bottom ring.
+        for i in range(_seg(11)):
+            a = math.tau * i / _seg(11)
+            r = 0.60
+            mb.lathe((math.cos(a) * r, math.sin(a) * r, 0.05),
+                     [(-0.28 - (i % 3) * 0.09, 0.0), (0.0, 0.11)],
+                     shade(self.robe, 0.8), segments=5, cap_top=False)
+        # Hood.
+        # The hood is set back so the hollow inside it, and the two lights
+        # in that hollow, stay visible from the front.
+        mb.lathe((0, 0.16, 1.76),
+                 [(0.0, 0.30), (0.14, 0.42), (0.32, 0.42), (0.46, 0.30),
+                  (0.54, 0.11)],
+                 shade(self.robe, 0.80), segments=_seg(10), cap_bottom=False,
+                 squash_y=1.06)
+        mb.sphere((0, 0.02, 1.96), 0.30, Vec4(0.06, 0.05, 0.09, 1),
+                  segments=_seg(9), rings=7)
+        for sx in (-0.135, 0.135):
+            mb.sphere((sx, -0.16, 1.99), 0.125, self.glow,
+                      segments=_seg(8), rings=6)
+            mb.sphere((sx, -0.24, 1.99), 0.065,
+                      Vec4(1.0, 0.96, 1.0, 1), segments=6, rings=5)
+        # Arms ending in bony claws.
         for sx in (-1, 1):
-            mb.cylinder((sx * 0.40, 0, 1.45), 0.12, 0.07, -0.95, self.robe,
-                        segments=6)
-            mb.sphere((sx * 0.46, 0, 0.50), 0.13, self.bone, segments=6,
-                      rings=5)
-        m = mb.build("ghoul_mesh")
-        m.reparentTo(self.model)
+            mb.lathe((sx * 0.40, 0, 0.50),
+                     [(0.0, 0.055), (0.55, 0.085), (0.95, 0.13)],
+                     self.robe, segments=_seg(7))
+            mb.sphere((sx * 0.46, -0.04, 0.46), 0.10, self.bone,
+                      segments=_seg(7), rings=5)
+            for k in range(3):
+                ka = -0.5 + k * 0.5
+                mb.lathe((sx * 0.46 + math.sin(ka) * 0.09, -0.06,
+                          0.20),
+                         [(0.0, 0.012), (0.18, 0.028), (0.26, 0.034)],
+                         self.bone, segments=5, cap_top=False)
+        mb.build("ghoul_mesh").reparentTo(self.model)
 
     def update(self, dt, player, effects) -> None:
         self.t += dt
@@ -634,30 +782,70 @@ class Knut(Enemy):
 
     def build_model(self) -> None:
         mb = MeshBuilder()
-        for sx in (-0.55, 0.55):
-            mb.cylinder((sx, 0, 0.0), 0.42, 0.36, 1.30, self.hide, segments=8)
-            mb.sphere((sx, -0.1, 0.05), 0.44, shade(self.hide, 0.9),
-                      segments=8, rings=6, squash=0.7)
-        mb.cylinder((0, 0, 1.15), 1.25, 1.05, 1.45, self.hide, segments=11)
-        mb.box((0, 0, 1.35), (2.7, 1.5, 0.42), self.cloth)         # belt
-        mb.sphere((0, 0, 2.75), 1.05, self.hide, segments=11, rings=8,
-                  squash=0.92)
-        mb.sphere((0, -0.35, 2.60), 0.62, shade(self.hide, 1.06), segments=9,
-                  rings=7, squash=0.8)                             # snout
-        for sx in (-0.3, 0.3):
-            mb.sphere((sx, -0.72, 2.82), 0.15, Vec4(0.95, 0.80, 0.25, 1),
+        rng = _rng
+        # Stumpy legs under a heavy gut.
+        for sx in (-0.62, 0.62):
+            mb.lathe((sx, 0, 0.0),
+                     [(0.0, 0.46), (0.55, 0.40), (1.25, 0.48)],
+                     self.hide, segments=_seg(9))
+            mb.sphere((sx, -0.16, 0.10), 0.50, shade(self.hide, 0.92),
+                      segments=_seg(8), rings=6, squash=0.6)
+        # Belly, chest and the loincloth over them.
+        mb.lathe((0, 0, 1.05),
+                 [(0.0, 1.05), (0.45, 1.32), (1.00, 1.24), (1.50, 1.00),
+                  (1.80, 0.78)],
+                 self.hide, segments=_seg(12), squash_y=0.86)
+        mb.lathe((0, 0, 1.02), [(0.0, 1.10), (0.40, 1.16)], self.cloth,
+                 segments=_seg(12), cap_top=False, cap_bottom=False)
+        mb.box((0, -0.62, 1.20), (0.9, 0.5, 1.0), shade(self.cloth, 0.85))
+        # Head: low brow, heavy jaw, snout and tusks.
+        mb.lathe((0, 0, 2.85),
+                 [(-0.30, 0.55), (-0.12, 0.86), (0.10, 1.00), (0.34, 0.92),
+                  (0.52, 0.62), (0.62, 0.24)],
+                 self.hide, segments=_seg(11), squash_y=0.95)
+        mb.lathe((0, -0.62, 2.78),
+                 [(0.0, 0.42), (0.22, 0.50), (0.40, 0.36)],
+                 shade(self.hide, 1.08), segments=_seg(9), squash_y=0.8)
+        for sx in (-0.26, 0.26):                                  # nostrils
+            mb.sphere((sx, -0.92, 2.98), 0.075, Vec4(0.24, 0.18, 0.14, 1),
                       segments=6, rings=5)
-            mb.cylinder((sx, -0.62, 2.42), 0.11, 0.0, 0.55, self.tusk,
-                        segments=6)                                # tusks
-            mb.cylinder((sx * 0.9, 0.5, 3.35), 0.16, 0.0, 0.5,
-                        shade(self.hide, 0.8), segments=6)         # ears
+        for sx in (-0.34, 0.34):                                  # eyes
+            mb.sphere((sx, -0.62, 3.30), 0.16, Vec4(0.94, 0.88, 0.62, 1),
+                      segments=_seg(8), rings=6)
+            mb.sphere((sx, -0.72, 3.30), 0.075, Vec4(0.12, 0.08, 0.06, 1),
+                      segments=6, rings=5)
+            mb.box((sx, -0.56, 3.50), (0.34, 0.16, 0.09),
+                   shade(self.hide, 0.6))                         # brow
+        for sx in (-0.30, 0.30):                                  # tusks
+            mb.lathe((sx, -0.70, 2.62),
+                     [(0.0, 0.03), (0.30, 0.09), (0.52, 0.13)],
+                     self.tusk, segments=6, cap_top=False)
+        for sx in (-1, 1):                                        # ears
+            mb.lathe((sx * 0.92, 0.16, 3.05),
+                     [(0.0, 0.06), (0.22, 0.22), (0.44, 0.10)],
+                     shade(self.hide, 0.88), segments=6)
+        # Warts, because an ogre should not be smooth.
+        for _ in range(14):
+            a = rng.uniform(0, math.tau)
+            z = rng.uniform(1.2, 2.6)
+            r = 1.18 if z < 2.2 else 0.9
+            mb.sphere((math.cos(a) * r, math.sin(a) * r * 0.86, z),
+                      rng.uniform(0.07, 0.14), shade(self.hide, 0.86),
+                      segments=6, rings=5)
         arm = MeshBuilder()
-        for sx in (-1.7, 1.7):
-            arm.sphere((sx, 0, 2.60), 0.52, self.hide, segments=8, rings=6)
-            arm.cylinder((sx, 0, 1.05), 0.40, 0.50, 1.60, self.hide,
-                         segments=8)
-            arm.sphere((sx, 0, 0.98), 0.58, shade(self.hide, 0.92),
-                       segments=8, rings=6)
+        for sx in (-1.42, 1.42):
+            arm.sphere((sx, 0, 2.62), 0.62, self.hide, segments=_seg(9),
+                       rings=7)
+            arm.sphere((sx * 0.72, 0, 2.66), 0.50, shade(self.hide, 1.04),
+                       segments=_seg(8), rings=6)
+            arm.lathe((sx, 0, 1.00),
+                      [(0.0, 0.52), (0.85, 0.44), (1.62, 0.56)],
+                      self.hide, segments=_seg(9))
+            arm.sphere((sx, -0.05, 0.92), 0.62, shade(self.hide, 0.94),
+                       segments=_seg(9), rings=7)
+            for k in range(4):                                    # knuckles
+                arm.sphere((sx + (k - 1.5) * 0.24, -0.44, 0.88), 0.16,
+                           shade(self.hide, 1.06), segments=6, rings=5)
         mb.build("knut_mesh").reparentTo(self.model)
         arms = arm.build("knut_arms")
         arms.reparentTo(self.model)
@@ -721,27 +909,51 @@ class DecayBeast(Enemy):
     hit_color = Vec4(0.55, 0.62, 0.35, 1)
     eye_height = 1.6
 
-    rot = Vec4(0.34, 0.36, 0.24, 1)
-    bile = Vec4(0.62, 0.72, 0.30, 1)
+    rot = Vec4(0.46, 0.48, 0.32, 1)
+    bile = Vec4(0.74, 0.86, 0.34, 1)
 
     def build_model(self) -> None:
         mb = MeshBuilder()
-        # Lopsided on purpose: nothing in the Army of Decay is symmetrical.
-        mb.cylinder((0, 0, 0.0), 0.70, 0.95, 1.20, self.rot, segments=9)
-        mb.sphere((0, 0, 1.75), 1.15, self.rot, segments=10, rings=8,
-                  squash=0.85)
-        mb.sphere((0.35, -0.2, 2.35), 0.62, shade(self.rot, 1.15), segments=9,
-                  rings=7)
-        for sx, sz, r in ((-0.75, 2.15, 0.30), (0.55, 2.75, 0.22),
-                          (-0.30, 2.60, 0.26)):
-            mb.sphere((sx, -0.35, sz), r, self.bile, segments=7, rings=5)
-        for sx in (-1, 1):
-            mb.cylinder((sx * 1.05, 0.1, 1.70), 0.26, 0.10, -1.30,
-                        shade(self.rot, 0.88), segments=7)
-            mb.cylinder((sx * 0.45, 0, 0.0), 0.26, 0.20, -0.05,
-                        shade(self.rot, 0.8), segments=6)
-        m = mb.build("decay_mesh")
-        m.reparentTo(self.model)
+        rng = random.Random(5)
+        # Deliberately lopsided: nothing in the Army of Decay is symmetrical.
+        mb.lathe((0, 0, 0.0),
+                 [(0.0, 0.80), (0.45, 1.00), (1.20, 1.18), (1.95, 1.05),
+                  (2.45, 0.72), (2.70, 0.40)],
+                 self.rot, segments=_seg(11), squash_y=0.88)
+        mb.sphere((0.38, -0.22, 2.30), 0.66, shade(self.rot, 1.12),
+                  segments=_seg(9), rings=7)
+        # A maw rather than a face.
+        mb.sphere((0.30, -0.62, 2.18), 0.34, Vec4(0.12, 0.14, 0.08, 1),
+                  segments=_seg(8), rings=6)
+        for k in range(6):
+            ka = -0.7 + k * 0.28
+            mb.lathe((0.30 + math.sin(ka) * 0.26, -0.70,
+                      2.32 - abs(k - 2.5) * 0.02),
+                     [(-0.20, 0.0), (0.0, 0.045)],
+                     Vec4(0.85, 0.86, 0.72, 1), segments=5, cap_top=False)
+        # Sores and bile blisters over the body.
+        for _ in range(16):
+            a = rng.uniform(0, math.tau)
+            z = rng.uniform(0.5, 2.5)
+            r = (1.10 if z < 2.0 else 0.7) * rng.uniform(0.85, 1.0)
+            mb.sphere((math.cos(a) * r, math.sin(a) * r * 0.88, z),
+                      rng.uniform(0.10, 0.26),
+                      self.bile if rng.random() < 0.45
+                      else shade(self.rot, 0.82),
+                      segments=6, rings=5)
+        # Mismatched limbs: one long arm, one stump, uneven feet.
+        mb.lathe((-1.08, 0.05, 1.85),
+                 [(-1.45, 0.13), (-0.70, 0.22), (0.0, 0.30)],
+                 shade(self.rot, 0.88), segments=_seg(8))
+        mb.sphere((-1.12, 0.0, 0.42), 0.26, shade(self.rot, 0.8),
+                  segments=6, rings=5)
+        mb.lathe((1.02, 0.05, 1.90),
+                 [(-0.80, 0.18), (-0.30, 0.26), (0.0, 0.30)],
+                 shade(self.rot, 0.88), segments=_seg(8))
+        for sx, rr in ((-0.48, 0.34), (0.52, 0.28)):
+            mb.sphere((sx, -0.10, 0.05), rr, shade(self.rot, 0.78),
+                      segments=6, rings=5, squash=0.55)
+        mb.build("decay_mesh").reparentTo(self.model)
 
     def update(self, dt, player, effects) -> None:
         self.t += dt

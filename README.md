@@ -180,15 +180,29 @@ damage and take half.
 Aisha joins the Winx in their second year, so she is locked until you finish
 the campaign once.
 
+![The Winx](screenshots/cast-fairies.png)
+
+Each is modelled from scratch: her own hairstyle (Bloom's long fall, Stella's
+ponytail, Flora's waves, Musa's bunches, Tecna's bob, Aisha's braids), her own
+eye colour, a face with brows, lashes and blush, a layered skirt, boots, and
+veined wings in her own colours.
+
 ![Choose your fairy](screenshots/02-character-select.png)
 
 ## Enemies
 
-**Ghouls** — the Trix's foot soldiers, fast and fragile. **Wisps** — flying
-ranged attackers. **Trolls** — heavy brutes that telegraph a slam. **Knut** —
-the ogre, who whistles up ghouls once he is hurt. **The Army of Decay** — slow,
-heavy, and it sheds rot as it comes. **The Trix** — Icy, Darcy and Stormy, each
-with three attack phases keyed to her own element.
+![The bestiary](screenshots/cast-enemies.png)
+
+**Ghouls** — the Trix's foot soldiers: a hooded robe with a ragged hem and two
+lights where a face should be. **Wisps** — flying ranged attackers. **Trolls** —
+heavy brutes that telegraph a slam. **Knut** — the ogre, all belly and tusks,
+who whistles up ghouls once he is hurt. **The Army of Decay** — deliberately
+lopsided, sores and mismatched limbs, shedding rot as it comes.
+
+**The Trix** are three different witches, not one model in three colours: Icy
+wears a long gown under a crown of ice spikes, Darcy a slim dark dress under
+heavy straight hair, Stormy a short dress under a storm cloud of frizz — and
+each orbits her own charm, shards, orbs or lightning.
 
 ## Sound
 
@@ -238,6 +252,16 @@ Windows, then the software renderer, rather than failing to start.
   each object is baked into a single `Geom` to keep draw calls low.
 - **Vertex colours instead of textures**, with baked-in shading, so there is no
   texture memory pressure and no shader cost.
+- **Surfaces of revolution** (`lathe`) do the organic shapes — tapered waists,
+  skulls, flared skirts, hoods — which is what lets characters be modelled
+  rather than assembled from boxes.
+- **Ground is tiled fine and varied**: each tile takes a deterministic colour
+  jitter, and natural ground picks its shade by noise rather than a checker
+  (a lawn should not read as a chessboard) with corner heights from a shared
+  hash so neighbouring tiles never crack apart. Grass tufts, flowers, pebbles
+  and cracks are scattered on top. Levels run about 16,000 triangles.
+- **One detail knob.** `--low` halves segment counts and doubles ground tile
+  size across every generated mesh.
 - **Static level geometry is flattened** into a handful of nodes at load.
 - **Analytic collision.** Movement, projectiles and pickups resolve against
   axis-aligned boxes directly rather than running Panda3D's collision
@@ -275,7 +299,9 @@ winx3d/
   audio.py            Instrument voices, realm themes, ambience, elemental SFX
   app.py              Screens, level flow, the frame loop
 tests/smoke.py        Headless playthrough test (no display needed)
-tools/capture.py      Renders the screenshots in this README
+tools/capture.py      Renders the in-game screenshots in this README
+tools/portraits.py    Renders each fairy, full body or close-up (--face)
+tools/bestiary.py     Renders every enemy model side by side
 ```
 
 Progress, options and your high score are saved to a per-user directory
@@ -290,7 +316,7 @@ The whole game can be played through with no display attached, which is how it
 is tested:
 
 ```sh
-python3 tests/smoke.py      # 178 checks: lore integrity, all six campaigns
+python3 tests/smoke.py      # 199 checks: lore integrity, all six campaigns
                             # and every home realm, placement validation for
                             # every pickup and puzzle object, each puzzle type
                             # end to end, menus, unlocks, the story system,
@@ -298,7 +324,9 @@ python3 tests/smoke.py      # 178 checks: lore integrity, all six campaigns
                             # combat, death, portals, the Trix, per-realm
                             # audio (including measuring the rendered
                             # samples), teardown
-python3 tools/capture.py    # regenerate screenshots/
+python3 tools/capture.py    # regenerate the in-game screenshots
+python3 tools/portraits.py  # render the six fairies  (--face for close-ups)
+python3 tools/bestiary.py   # render every enemy
 ```
 
 ---

@@ -14,6 +14,7 @@ from panda3d.core import (AmbientLight, CardMaker, ClockObject, Point2,
 from . import characters, config as C, enemies as E, lore, puzzles
 from .audio import Audio
 from .effects import EffectSystem, Pickup
+from . import geometry
 from .geometry import MeshBuilder, shade
 from .hud import HUD, card, text
 from .player import Player
@@ -85,6 +86,9 @@ def _portal_model(color: Vec4) -> NodePath:
 
 class Game(ShowBase):
     def __init__(self, low_detail: bool = False) -> None:
+        # Set before anything is built: it decides segment counts and ground
+        # tile sizes for every mesh the game generates.
+        geometry.set_detail(0.55 if low_detail else 1.0)
         ShowBase.__init__(self)
         self.disableMouse()
         self.low_detail = low_detail

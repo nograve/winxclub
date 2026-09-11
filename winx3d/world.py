@@ -210,6 +210,49 @@ class WorldBuilder:
 # ---------------------------------------------------------------------------
 # Shared props
 # ---------------------------------------------------------------------------
+def _scatter(b: WorldBuilder, rng, count, inner, outer, kind, colors,
+             z=0.0, avoid=None) -> None:
+    """Surface clutter - tufts, pebbles, flowers, sparks.
+
+    Visual only and never collidable: it exists to stop the ground reading
+    as one flat plane.
+    """
+    mesh = b.decor()
+    for _ in range(count):
+        a = rng.uniform(0, math.tau)
+        r = rng.uniform(inner, outer)
+        x, y = math.cos(a) * r, math.sin(a) * r
+        if avoid and avoid(x, y):
+            continue
+        col = colors[rng.randrange(len(colors))]
+        if kind == "tuft":
+            for _b in range(rng.randint(3, 5)):
+                hh = rng.uniform(0.35, 0.85)
+                mesh.lathe((x + rng.uniform(-0.3, 0.3),
+                            y + rng.uniform(-0.3, 0.3), z),
+                           [(0.0, 0.055), (hh * 0.6, 0.03), (hh, 0.0)],
+                           shade(col, rng.uniform(0.85, 1.15)), segments=4)
+        elif kind == "pebble":
+            mesh.sphere((x, y, z + 0.04), rng.uniform(0.12, 0.34),
+                        shade(col, rng.uniform(0.8, 1.2)), segments=6,
+                        rings=4, squash=0.45)
+        elif kind == "flower":
+            hh = rng.uniform(0.3, 0.6)
+            mesh.lathe((x, y, z), [(0.0, 0.035), (hh, 0.025)],
+                       Vec4(0.34, 0.58, 0.30, 1), segments=4)
+            mesh.sphere((x, y, z + hh + 0.06), rng.uniform(0.09, 0.16), col,
+                        segments=6, rings=4, squash=0.6)
+        elif kind == "crack":
+            ang = rng.uniform(0, math.tau)
+            for k in range(rng.randint(2, 4)):
+                mesh.box((x + math.cos(ang) * k * 0.9,
+                          y + math.sin(ang) * k * 0.9, z + 0.02),
+                         (rng.uniform(0.8, 1.8), 0.10, 0.04), col)
+        else:                                   # "spark" - tiny glowing motes
+            mesh.sphere((x, y, z + rng.uniform(0.3, 1.6)),
+                        rng.uniform(0.05, 0.11), col, segments=5, rings=4)
+
+
 def _lamp(b: WorldBuilder, x, y, color=Vec4(1.0, 0.92, 0.65, 1)) -> None:
     b.mesh.cylinder((x, y, 0), 0.22, 0.16, 4.2, Vec4(0.22, 0.22, 0.26, 1),
                     segments=7)
@@ -275,15 +318,16 @@ def _build_gardenia(b: WorldBuilder, besieged: bool = False) -> None:
         grass_b = Vec4(0.29, 0.28, 0.18, 1)
         path = Vec4(0.52, 0.48, 0.42, 1)
 
-    b.mesh.grid_ground(170, 170, grass_a, grass_b, step=11.0)
+    b.mesh.grid_ground(170, 170, grass_a, grass_b, step=5.5, jitter=0.14,
+                       relief=0.09, seed=1)
     b.clip((0, 0, -2.0), (200, 200, 4.0))
     b.bounds(64, 64)
 
     # Crossing paths, with the bandstand where they meet.
     b.mesh.grid_ground(14, 150, shade(path, 1.0), shade(path, 0.94),
-                       step=7.0, center=(0, 0, 0.05))
+                       step=3.5, center=(0, 0, 0.05), jitter=0.09, seed=2)
     b.mesh.grid_ground(150, 14, shade(path, 1.0), shade(path, 0.94),
-                       step=7.0, center=(0, 0, 0.05))
+                       step=3.5, center=(0, 0, 0.05), jitter=0.09, seed=3)
 
     # Bandstand: raised, open-sided, a good place to be cornered.
     b.solid((0, 0, 0.45), (16, 16, 0.9), shade(path, 1.06))
@@ -334,6 +378,14 @@ def _build_gardenia(b: WorldBuilder, besieged: bool = False) -> None:
     for x in range(-56, 57, 4):
         b.mesh.cylinder((x, 50, 0), 0.10, 0.10, 2.2, Vec4(0.28, 0.28, 0.32, 1),
                         segments=5)
+    _scatter(b, rng, 170, 12, 62, "tuft", [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
+               Vec4(0.30, 0.55, 0.28, 1)],
+             avoid=lambda x, y: abs(x) < 8 or abs(y) < 8)
+    _scatter(b, rng, 60, 14, 58, "flower",
+             [Vec4(0.98, 0.95, 0.85, 1), Vec4(0.98, 0.80, 0.35, 1),
+              Vec4(0.92, 0.60, 0.80, 1)],
+             avoid=lambda x, y: abs(x) < 8 or abs(y) < 8)
+    _scatter(b, rng, 40, 6, 48, "pebble", [Vec4(0.70, 0.66, 0.58, 1)])
     b.clip((0, 50, 2.0), (120, 0.8, 4.0))
     if besieged:
         _blight(b, rng, 20, Vec4(0.66, 0.62, 0.56, 1), radius=(16, 56))
@@ -373,12 +425,13 @@ def _build_alfea(b: WorldBuilder, besieged: bool = False) -> None:
         stone = Vec4(0.56, 0.52, 0.50, 1)
         roof = Vec4(0.45, 0.22, 0.30, 1)
 
-    b.mesh.grid_ground(200, 200, grass_a, grass_b, step=10.0)
+    b.mesh.grid_ground(200, 200, grass_a, grass_b, step=5.5, jitter=0.14,
+                       relief=0.09, seed=4)
     b.clip((0, 0, -2.0), (240, 240, 4.0))
     b.bounds(92, 92)
 
     b.mesh.grid_ground(56, 56, shade(stone, 0.98), shade(stone, 0.90),
-                       step=7.0, center=(0, 0, 0.06))
+                       step=3.5, center=(0, 0, 0.06), jitter=0.08, seed=5)
     b.solid((0, 0, 0.5), (9, 9, 1.0), shade(stone, 1.02))
     b.solid((0, 0, 1.6), (5.5, 5.5, 1.4), shade(stone, 0.95))
     b.mesh.cylinder((0, 0, 2.3), 0.8, 0.5, 3.2, shade(stone, 1.05), segments=10)
@@ -429,6 +482,17 @@ def _build_alfea(b: WorldBuilder, besieged: bool = False) -> None:
         b.solid((x, 18, 0.9), (7, 1.6, 1.8),
                 Vec4(0.28, 0.55, 0.30, 1) if not besieged
                 else Vec4(0.30, 0.28, 0.18, 1))
+
+    if besieged:
+        _scatter(b, rng, 120, 30, 84, "tuft",
+                 [Vec4(0.38, 0.34, 0.20, 1), Vec4(0.30, 0.28, 0.18, 1)])
+        _scatter(b, rng, 70, 12, 80, "crack", [Vec4(0.18, 0.15, 0.14, 1)])
+    else:
+        _scatter(b, rng, 200, 30, 88, "tuft", [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
+               Vec4(0.30, 0.55, 0.28, 1)])
+        _scatter(b, rng, 70, 32, 84, "flower",
+                 [Vec4(0.98, 0.72, 0.82, 1), Vec4(0.98, 0.92, 0.60, 1)])
+        _scatter(b, rng, 40, 30, 40, "pebble", [Vec4(0.78, 0.75, 0.68, 1)])
 
     if besieged:
         # Rubble where the barrier gave way, and fires in the wreckage.
@@ -491,7 +555,8 @@ def _build_swamp(b: WorldBuilder) -> None:
     water = Vec4(0.24, 0.34, 0.26, 0.66)
     rock = Vec4(0.40, 0.40, 0.36, 1)
 
-    b.mesh.grid_ground(200, 200, mud_a, mud_b, step=12.0)
+    b.mesh.grid_ground(200, 200, mud_a, mud_b, step=6.0, jitter=0.19,
+                       relief=0.14, seed=6)
     b.clip((0, 0, -2.0), (240, 240, 4.0))
     b.bounds(80, 80)
 
@@ -543,6 +608,12 @@ def _build_swamp(b: WorldBuilder) -> None:
         b.solid((px, py, pz), (7, 7, 1.0), shade(rock, 1.0),
                 shade(Vec4(0.36, 0.52, 0.34, 1), 1.1))
 
+    _scatter(b, rng, 200, 10, 74, "tuft",
+             [Vec4(0.34, 0.40, 0.22, 1), Vec4(0.28, 0.34, 0.20, 1),
+              Vec4(0.40, 0.44, 0.26, 1)])
+    _scatter(b, rng, 60, 12, 70, "pebble", [Vec4(0.36, 0.36, 0.32, 1)])
+    _scatter(b, rng, 45, 14, 70, "spark", [Vec4(0.60, 0.95, 0.55, 0.8)])
+
     # A stranded islet, reachable only across the bridge the levers extend.
     b.solid((28, 0, 3.0), (10, 10, 1.0), shade(rock, 1.05),
             shade(Vec4(0.36, 0.52, 0.34, 1), 1.1))
@@ -590,7 +661,8 @@ def _build_cloudtower(b: WorldBuilder, fallen: bool = False) -> None:
         slab_b = Vec4(0.23, 0.22, 0.22, 1)
         rune = Vec4(0.55, 0.72, 0.28, 1)     # decay green, not witch violet
 
-    b.mesh.grid_ground(110, 110, slab_a, slab_b, step=9.0)
+    b.mesh.grid_ground(110, 110, slab_a, slab_b, step=4.5, jitter=0.12,
+                       seed=7)
     b.clip((0, 0, -2.0), (130, 130, 4.0))
     b.bounds(52, 52, height=90)
 
@@ -635,6 +707,9 @@ def _build_cloudtower(b: WorldBuilder, fallen: bool = False) -> None:
         b.solid((math.cos(a) * 21.0, math.sin(a) * 21.0, 2.0 + i * 0.95),
                 (5.5, 5.5, 0.9), shade(slab_b, 1.15))
 
+    _scatter(b, rng, 80, 8, 46, "crack", [shade(obsidian, 0.6)])
+    _scatter(b, rng, 55, 10, 46, "spark",
+             [Vec4(rune[0], rune[1], rune[2], 0.9)])
     for _ in range(30):
         a = rng.uniform(0, math.tau)
         r = rng.uniform(6, 50)
@@ -690,13 +765,14 @@ def _build_roccaluce(b: WorldBuilder) -> None:
     rock = Vec4(0.48, 0.50, 0.56, 1)
     pine = Vec4(0.22, 0.36, 0.34, 1)
 
-    b.mesh.grid_ground(200, 200, snow_a, snow_b, step=12.0)
+    b.mesh.grid_ground(200, 200, snow_a, snow_b, step=6.0, jitter=0.09,
+                       relief=0.12, seed=8)
     b.clip((0, 0, -2.0), (240, 240, 4.0))
     b.bounds(78, 78)
 
     # The frozen lake: a broad sheet of ice in the middle of the bowl.
-    b.mesh.grid_ground(84, 84, shade(ice, 1.04), shade(ice, 0.94), step=10.5,
-                       center=(0, 0, 0.08))
+    b.mesh.grid_ground(84, 84, shade(ice, 1.04), shade(ice, 0.94), step=5.25,
+                       center=(0, 0, 0.08), jitter=0.11, seed=9)
     b.glass().grid_ground(84, 84, Vec4(0.70, 0.88, 1.0, 0.30),
                           Vec4(0.62, 0.82, 0.98, 0.30), step=10.5,
                           center=(0, 0, 0.30))
@@ -747,6 +823,9 @@ def _build_roccaluce(b: WorldBuilder) -> None:
                             2.2 - k * 0.6, 0.0, h * 0.40,
                             shade(pine, 0.9 + 0.1 * k), segments=8)
         b.boxes.append((Vec3(x, y, h * 0.4), Vec3(0.6, 0.6, h * 0.4)))
+    _scatter(b, rng, 130, 44, 76, "pebble",
+             [Vec4(0.90, 0.93, 0.97, 1), Vec4(0.84, 0.88, 0.94, 1)])
+    _scatter(b, rng, 70, 8, 40, "spark", [Vec4(0.85, 0.95, 1.0, 0.9)])
     for _ in range(16):
         a = rng.uniform(0, math.tau)
         r = rng.uniform(44, 70)
@@ -783,13 +862,14 @@ def _build_redfountain(b: WorldBuilder) -> None:
     trim = Vec4(0.92, 0.78, 0.38, 1)
     steel = Vec4(0.60, 0.62, 0.68, 1)
 
-    b.mesh.grid_ground(190, 190, ground_a, ground_b, step=11.0)
+    b.mesh.grid_ground(190, 190, ground_a, ground_b, step=5.5, jitter=0.16,
+                       relief=0.10, seed=10)
     b.clip((0, 0, -2.0), (230, 230, 4.0))
     b.bounds(84, 84)
 
     # The training arena: a sunken oval ringed by tiered seating.
     b.mesh.grid_ground(60, 60, shade(ground_a, 1.12), shade(ground_a, 1.04),
-                       step=10.0, center=(0, 0, 0.06))
+                       step=5.0, center=(0, 0, 0.06), jitter=0.11, seed=11)
     for i, r in enumerate((34.0, 38.0, 42.0)):
         segs = 28
         for k in range(segs):
@@ -835,6 +915,9 @@ def _build_redfountain(b: WorldBuilder) -> None:
     for i in range(6):
         b.solid((-40 + i * 16, -70, 4.0), (16, 3.0, 8.0), shade(wall, 0.8))
 
+    _scatter(b, rng, 90, 8, 30, "pebble", [Vec4(0.58, 0.52, 0.42, 1)])
+    _scatter(b, rng, 60, 46, 78, "tuft",
+             [Vec4(0.44, 0.48, 0.28, 1), Vec4(0.38, 0.42, 0.24, 1)])
     for _ in range(18):
         a = rng.uniform(0, math.tau)
         r = rng.uniform(50, 78)
@@ -869,7 +952,8 @@ def _build_pixievillage(b: WorldBuilder) -> None:
     grass_b = Vec4(0.38, 0.68, 0.38, 1)
     stalk = Vec4(0.92, 0.90, 0.80, 1)
 
-    b.mesh.grid_ground(180, 180, grass_a, grass_b, step=9.0)
+    b.mesh.grid_ground(180, 180, grass_a, grass_b, step=4.5, jitter=0.15,
+                       relief=0.08, seed=12)
     b.clip((0, 0, -2.0), (220, 220, 4.0))
     b.bounds(72, 72)
 
@@ -936,6 +1020,9 @@ def _build_pixievillage(b: WorldBuilder) -> None:
         b.glass().sphere((math.cos(a) * r, math.sin(a) * r,
                           rng.uniform(2.0, 7.0)), rng.uniform(0.4, 0.8),
                          Vec4(1.0, 0.95, 0.55, 0.60), segments=6, rings=5)
+    _scatter(b, rng, 220, 8, 66, "tuft", [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
+               Vec4(0.30, 0.55, 0.28, 1)])
+    _scatter(b, rng, 140, 8, 64, "flower", caps)
     for _ in range(20):
         a = rng.uniform(0, math.tau)
         r = rng.uniform(50, 68)
@@ -1004,13 +1091,14 @@ def _build_solaria(b: WorldBuilder, besieged: bool = False) -> None:
         gold = Vec4(0.66, 0.52, 0.26, 1)
         sand = Vec4(0.58, 0.52, 0.42, 1)
 
-    b.mesh.grid_ground(190, 190, sand, shade(sand, 0.94), step=12.0)
+    b.mesh.grid_ground(190, 190, sand, shade(sand, 0.94), step=6.0,
+                       jitter=0.14, relief=0.11, seed=13)
     b.clip((0, 0, -2.0), (230, 230, 4.0))
     b.bounds(80, 80)
 
     # A vast tiled plaza in front of the palace steps.
     b.mesh.grid_ground(76, 76, shade(marble, 1.0), shade(marble, 0.92),
-                       step=9.5, center=(0, 0, 0.06))
+                       step=4.75, center=(0, 0, 0.06), jitter=0.07, seed=14)
 
     # The palace: a stepped ziggurat crowned with the sun disc.
     for i, (w, h) in enumerate(((46, 4.0), (36, 4.0), (26, 4.0))):
@@ -1073,7 +1161,8 @@ def _build_lynphea(b: WorldBuilder, besieged: bool = False) -> None:
         moss_b = Vec4(0.30, 0.29, 0.17, 1)
         petal = [shade(p, 0.45) for p in petal]
 
-    b.mesh.grid_ground(190, 190, moss, moss_b, step=11.0)
+    b.mesh.grid_ground(190, 190, moss, moss_b, step=5.5, jitter=0.18,
+                       relief=0.11, seed=15)
     b.clip((0, 0, -2.0), (230, 230, 4.0))
     b.bounds(80, 80)
 
@@ -1158,7 +1247,7 @@ def _build_melody(b: WorldBuilder, besieged: bool = False) -> None:
         jade = Vec4(0.30, 0.42, 0.38, 1)
 
     b.mesh.grid_ground(190, 190, shade(stone, 0.86), shade(stone, 0.80),
-                       step=12.0)
+                       step=6.0, jitter=0.12, relief=0.08, seed=16)
     b.clip((0, 0, -2.0), (230, 230, 4.0))
     b.bounds(78, 78)
 
@@ -1174,7 +1263,7 @@ def _build_melody(b: WorldBuilder, besieged: bool = False) -> None:
                     (7.0, 7.0, 1.4 + (3 - i) * 1.5),
                     shade(stone, 0.88 + i * 0.05))
     b.mesh.grid_ground(26, 26, shade(lacquer, 1.05), shade(lacquer, 0.94),
-                       step=6.5, center=(0, 0, 0.10))
+                       step=3.25, center=(0, 0, 0.10), jitter=0.09, seed=17)
 
     # Giant drums around the stage - solid, and you can stand on them.
     for i in range(6):
@@ -1240,7 +1329,8 @@ def _build_zenith(b: WorldBuilder, besieged: bool = False) -> None:
         board = Vec4(0.18, 0.16, 0.16, 1)
         board_b = Vec4(0.14, 0.12, 0.12, 1)
 
-    b.mesh.grid_ground(190, 190, board, board_b, step=8.0)
+    b.mesh.grid_ground(190, 190, board, board_b, step=4.0, jitter=0.19,
+                       seed=18)
     b.clip((0, 0, -2.0), (230, 230, 4.0))
     b.bounds(78, 78)
 
@@ -1316,7 +1406,8 @@ def _build_andros(b: WorldBuilder, besieged: bool = False) -> None:
         stone = Vec4(0.52, 0.52, 0.50, 1)
 
     # The sea is the floor: solid enough to stand on, visually translucent.
-    b.mesh.grid_ground(200, 200, sea, sea_b, step=13.0)
+    b.mesh.grid_ground(200, 200, sea, sea_b, step=6.5, jitter=0.14,
+                       relief=0.15, seed=19)
     b.clip((0, 0, -2.0), (240, 240, 4.0))
     b.bounds(82, 82)
     b.glass().grid_ground(200, 200, Vec4(0.30, 0.62, 0.82, 0.42),

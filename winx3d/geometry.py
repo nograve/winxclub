@@ -16,6 +16,27 @@ from panda3d.core import (Geom, GeomNode, GeomTriangles, GeomVertexData,
 
 TAU = math.pi * 2.0
 
+# Global mesh density, lowered by --low. Everything that picks a segment
+# count or a tile size goes through seg()/DETAIL so one switch covers the
+# whole game.
+DETAIL = 1.0
+
+
+def set_detail(level: float) -> None:
+    global DETAIL
+    DETAIL = max(0.4, min(1.0, level))
+
+
+def seg(n: int) -> int:
+    return max(5, int(round(n * DETAIL)))
+
+
+def _hash2(ix: int, iy: int, seed: int = 0) -> float:
+    """Deterministic 0..1 value noise, stable across runs and platforms."""
+    h = (ix * 374761393 + iy * 668265263 + seed * 2147483647) & 0xffffffff
+    h = (h ^ (h >> 13)) * 1274126177 & 0xffffffff
+    return ((h ^ (h >> 16)) & 0xffff) / 65535.0
+
 
 def _as_vec3(p) -> Vec3:
     return p if isinstance(p, Vec3) else Vec3(p[0], p[1], p[2])
@@ -159,6 +180,71 @@ class MeshBuilder:
                 else:
                     self.add_quad(p00, p01, p11, p10, col)
 
+    def lathe(self, base, profile, color, segments=14, cap_bottom=True,
+              cap_top=True, shade_fn=None, squash_y=1.0) -> None:
+        """A surface of revolution around +Z through ``profile``.
+
+        ``profile`` is a list of ``(z, radius)`` pairs from bottom to top.
+        This is what gives the characters shapes that a stack of cylinders
+        cannot - tapered waists, flared skirts, rounded skulls - for very
+        little code.  ``squash_y`` flattens the result along Y, which is what
+        turns a round head into one with a face.
+        """
+        b = _as_vec3(base)
+        rings = []
+        for z, r in profile:
+            ring = []
+            for i in range(segments):
+                a = TAU * i / segments
+                ring.append(Vec3(b.x + math.cos(a) * r,
+                                 b.y + math.sin(a) * r * squash_y,
+                                 b.z + z))
+            rings.append(ring)
+
+        n = len(profile)
+        for k in range(n - 1):
+            lo, hi = rings[k], rings[k + 1]
+            t = k / max(1, n - 2)
+            base_col = color if shade_fn is None else shade_fn(t)
+            for i in range(segments):
+                j = (i + 1) % segments
+                a = TAU * (i + 0.5) / segments
+                # Cheap directional shading so the form reads without lights.
+                lit = 0.74 + 0.26 * max(0.0, math.cos(a - 0.9))
+                col = shade(base_col, lit)
+                if profile[k][1] <= 1e-6:
+                    self.add_tri(lo[i], hi[i], hi[j], col)
+                elif profile[k + 1][1] <= 1e-6:
+                    self.add_tri(lo[i], lo[j], hi[i], col)
+                else:
+                    self.add_quad(lo[i], lo[j], hi[j], hi[i], col)
+
+        if cap_bottom and profile[0][1] > 1e-6:
+            c = Vec3(b.x, b.y, b.z + profile[0][0])
+            dark = shade(color if shade_fn is None else shade_fn(0.0), 0.55)
+            for i in range(segments):
+                j = (i + 1) % segments
+                self.add_tri(c, rings[0][j], rings[0][i], dark, Vec3(0, 0, -1))
+        if cap_top and profile[-1][1] > 1e-6:
+            c = Vec3(b.x, b.y, b.z + profile[-1][0])
+            top = color if shade_fn is None else shade_fn(1.0)
+            for i in range(segments):
+                j = (i + 1) % segments
+                self.add_tri(c, rings[-1][i], rings[-1][j], top, Vec3(0, 0, 1))
+
+    def disc(self, center, radius, color, segments=12, normal=(0, -1, 0),
+             squash=1.0) -> None:
+        """A flat circle facing -Y - used for eyes and other face details."""
+        c = _as_vec3(center)
+        pts = []
+        for i in range(segments):
+            a = TAU * i / segments
+            pts.append(Vec3(c.x + math.cos(a) * radius,
+                            c.y, c.z + math.sin(a) * radius * squash))
+        for i in range(segments):
+            j = (i + 1) % segments
+            self.add_tri(c, pts[i], pts[j], color, _as_vec3(normal))
+
     def prism(self, center, size, color) -> None:
         """Triangular prism (a roof) with its ridge along the Y axis."""
         c = _as_vec3(center)
@@ -176,19 +262,49 @@ class MeshBuilder:
         self.add_quad(a0, a1, b1, b0, shade(color, 0.5))
 
     def grid_ground(self, width, depth, color_a, color_b, step=8.0,
-                    center=(0, 0, 0)) -> None:
-        """Checkerboard ground plane — reads as terrain with zero textures."""
+                    center=(0, 0, 0), jitter=0.0, relief=0.0, seed=0) -> None:
+        """Ground plane built from tiles.
+
+        A plain checkerboard reads as programmer art, so each tile also gets
+        a small deterministic colour jitter, and ``relief`` lifts the corners
+        by a little value noise.  Corner heights come from a shared hash, so
+        neighbouring tiles agree and the surface has no cracks.  Collision
+        stays a flat box underneath - the relief is small enough that the
+        difference is invisible underfoot.
+        """
         c = _as_vec3(center)
+        if DETAIL < 1.0:
+            step = step / max(0.4, DETAIL)
         nx = max(1, int(width / step))
         ny = max(1, int(depth / step))
         x0, y0 = c.x - width * 0.5, c.y - depth * 0.5
+
+        def h(ix, iy):
+            if relief <= 0.0:
+                return c.z
+            return c.z + (_hash2(ix, iy, seed) - 0.5) * 2.0 * relief
+
+        # Built floors are laid in a checker because that is how tiling
+        # looks. Natural ground is not tiled, so it picks between the two
+        # colours by noise instead - otherwise a lawn reads as a chessboard.
+        natural = relief > 0.0
         for ix in range(nx):
             for iy in range(ny):
-                col = color_a if (ix + iy) % 2 == 0 else color_b
+                if natural:
+                    base = (color_a if _hash2(ix, iy, seed + 31) < 0.5
+                            else color_b)
+                else:
+                    base = color_a if (ix + iy) % 2 == 0 else color_b
+                if jitter:
+                    k = 1.0 + (_hash2(ix, iy, seed + 7) - 0.5) * 2.0 * jitter
+                    col = shade(base, k)
+                else:
+                    col = base
                 ax, ay = x0 + ix * step, y0 + iy * step
                 bx, by = ax + step, ay + step
-                self.add_quad((ax, ay, c.z), (bx, ay, c.z), (bx, by, c.z),
-                              (ax, by, c.z), col, Vec3(0, 0, 1))
+                self.add_quad((ax, ay, h(ix, iy)), (bx, ay, h(ix + 1, iy)),
+                              (bx, by, h(ix + 1, iy + 1)),
+                              (ax, by, h(ix, iy + 1)), col)
 
     def transform(self, mat) -> None:
         """Apply a matrix to everything accumulated so far."""

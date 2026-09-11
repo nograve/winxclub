@@ -275,6 +275,64 @@ def main():
     check("themes are not all the same rendering",
           len({round(sigs[k], 3) for k in themes}) >= len(themes) // 2)
 
+    print("\n[1f] Model detail")
+    from winx3d import enemies as _E
+    from winx3d.geometry import MeshBuilder
+    from panda3d.core import NodePath as _NP
+
+    def tri_count(build):
+        mb = MeshBuilder()
+        build(mb)
+        return len(mb._tris)
+
+    # Every fairy must be a real model, not a stub.
+    for f in characters.ROSTER:
+        model, parts = characters.build_fairy(f)
+        pieces = model.findAllMatches("**/+GeomNode").getNumPaths()
+        ok = pieces >= 8 and set(parts) >= {"head", "torso", "hips", "aura",
+                                            "arm_l", "arm_r", "leg_l",
+                                            "leg_r", "wing_l", "wing_r"}
+        check("%-7s has a full body" % f.name, ok, "%d pieces" % pieces)
+        model.removeNode()
+    styles = {f.hair_style for f in characters.ROSTER}
+    check("the fairies do not share one hairstyle", len(styles) >= 5,
+          str(sorted(styles)))
+    check("each fairy has her own eye colour",
+          len({tuple(f.eye) for f in characters.ROSTER}) == 6)
+
+    # Enemies likewise, and the Trix must differ in shape not just palette.
+    holder = _NP("holder")
+    for key in sorted(_E.KINDS):
+        foe = _E.spawn(key, holder, Vec3(0, 0, 0), [])
+        pieces = foe.root.findAllMatches("**/+GeomNode").getNumPaths()
+        check("%-8s model built" % key, pieces >= 1, "%d" % pieces)
+        foe.root.removeNode()
+    trix = (_E.Icy, _E.Darcy, _E.Stormy)
+    check("the Trix have different silhouettes",
+          len({(c.hair_style, c.gown, c.charm) for c in trix}) == 3)
+    check("the Trix have different palettes",
+          len({tuple(c.ice) for c in trix}) == 3)
+
+    # Ground should carry surface variation, not be a bare plane.
+    plain = tri_count(lambda m: m.grid_ground(120, 120, (0.4, 0.7, 0.4),
+                                              (0.4, 0.7, 0.4), step=11.0))
+    detailed = tri_count(lambda m: m.grid_ground(120, 120, (0.4, 0.7, 0.4),
+                                                 (0.35, 0.65, 0.35), step=5.5,
+                                                 jitter=0.12, relief=0.09))
+    check("ground is finely tiled", detailed > plain * 3,
+          "%d vs %d tris" % (detailed, plain))
+
+    # And every level's mesh should be substantial but not extravagant.
+    heavy = []
+    for lv in all_levels:
+        wb = WorldBuilder()
+        lv.build(wb)
+        n = len(wb.mesh._tris) + len(wb.alpha_mesh._tris)
+        if n < 3000 or n > 60000:
+            heavy.append("%s:%d" % (lv.key, n))
+    check("level geometry is detailed and within budget", not heavy,
+          str(heavy[:4]))
+
     print("\n[2] Title and menus")
     h.step(3)
     check("starts on the title screen", g.state == "title")
