@@ -8,12 +8,12 @@ walls, and ray-vs-solid for finding the floor.
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass, field
 
 from panda3d.core import (BitMask32, CollisionBox, CollisionNode, NodePath,
                           Point3, TransparencyAttrib, Vec3, Vec4)
 
+from .course import Course, Theme
 from .geometry import MeshBuilder, shade
 
 # Collision masks.  Solids are "into" only; the player and projectiles are the
@@ -39,7 +39,8 @@ class PuzzleSpec:
     color: Vec4 = None
     title: str = ""                    # tablet heading
     text: str = ""                     # tablet body
-    reward: str = "score"              # what a cache gives up
+    reward: str = "score"              # what a cache or chest gives up
+    power: float = 0.0                 # spring launch speed
 
 
 @dataclass
@@ -97,6 +98,9 @@ class Level:
     gem_name: str = "gem"      # what the collectibles are called in this level
     puzzles: list = field(default_factory=list)
     objectives: list = field(default_factory=list)
+    checkpoints: list = field(default_factory=list)
+    fall_z: float = -25.0
+    course_length: float = 0.0
 
 
 class WorldBuilder:
@@ -305,1321 +309,806 @@ def _spire(b: WorldBuilder, x, y, radius, height, wall, rune, segments=10)\
 
 
 # ---------------------------------------------------------------------------
-# Chapter 1 - Gardenia Park (Earth)
+# Themes - the look of each realm's course
 # ---------------------------------------------------------------------------
-def _build_gardenia(b: WorldBuilder, besieged: bool = False) -> None:
-    """Bloom's home is Earth, not Domino - she was raised in Gardenia."""
-    rng = random.Random(101)
-    grass_a = Vec4(0.46, 0.70, 0.36, 1)
-    grass_b = Vec4(0.40, 0.64, 0.33, 1)
-    path = Vec4(0.78, 0.72, 0.60, 1)
-    if besieged:
-        grass_a = Vec4(0.34, 0.33, 0.21, 1)
-        grass_b = Vec4(0.29, 0.28, 0.18, 1)
-        path = Vec4(0.52, 0.48, 0.42, 1)
-
-    b.mesh.grid_ground(170, 170, grass_a, grass_b, step=5.5, jitter=0.14,
-                       relief=0.09, seed=1)
-    b.clip((0, 0, -2.0), (200, 200, 4.0))
-    b.bounds(64, 64)
-
-    # Crossing paths, with the bandstand where they meet.
-    b.mesh.grid_ground(14, 150, shade(path, 1.0), shade(path, 0.94),
-                       step=3.5, center=(0, 0, 0.05), jitter=0.09, seed=2)
-    b.mesh.grid_ground(150, 14, shade(path, 1.0), shade(path, 0.94),
-                       step=3.5, center=(0, 0, 0.05), jitter=0.09, seed=3)
-
-    # Bandstand: raised, open-sided, a good place to be cornered.
-    b.solid((0, 0, 0.45), (16, 16, 0.9), shade(path, 1.06))
-    b.solid((0, 0, 1.15), (13, 13, 0.5), Vec4(0.62, 0.46, 0.32, 1))
-    for i in range(8):
-        a = math.tau * i / 8
-        px, py = math.cos(a) * 5.6, math.sin(a) * 5.6
-        b.mesh.cylinder((px, py, 1.4), 0.26, 0.22, 3.6, Vec4(0.90, 0.88, 0.82, 1),
-                        segments=7)
-        b.boxes.append((Vec3(px, py, 3.2), Vec3(0.3, 0.3, 1.8)))
-    b.mesh.cylinder((0, 0, 5.0), 7.2, 0.0, 2.6, Vec4(0.35, 0.52, 0.60, 1),
-                    segments=10)
-
-    # Pond in the north-east corner.
-    b.glass().grid_ground(26, 26, Vec4(0.32, 0.62, 0.80, 0.62),
-                          Vec4(0.26, 0.55, 0.74, 0.62), step=6.5,
-                          center=(34, 34, 0.30))
-    for i in range(12):
-        a = math.tau * i / 12
-        b.mesh.box((34 + math.cos(a) * 14, 34 + math.sin(a) * 14, 0.25),
-                   (3.0, 3.0, 0.5), Vec4(0.62, 0.60, 0.56, 1))
-
-    # Park furniture along the paths.
-    for y in (-34, -20, 20, 34):
-        _bench(b, -9.5, y)
-        _bench(b, 9.5, y)
-    for (lx, ly) in ((-22, -22), (22, -22), (-22, 22), (22, 22),
-                     (-42, 0), (42, 0)):
-        _lamp(b, lx, ly)
-
-    # Trees, and hedges boxing in the lawn.
-    for _ in range(30):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(24, 56)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        if abs(x) < 9 or abs(y) < 9:
-            continue
-        b.tree(x, y, 0, rng.uniform(3.8, 6.0), Vec4(0.44, 0.32, 0.22, 1),
-               Vec4(0.32, 0.58, 0.30, 1), rng)
-    for x in range(-40, 41, 16):
-        b.solid((x, -46, 0.8), (11, 1.8, 1.6), Vec4(0.30, 0.52, 0.30, 1))
-
-    # Gardenia's houses beyond the railings - Earth, seen from the park.
-    for i, x in enumerate(range(-48, 49, 24)):
-        _house(b, x, 60, 14, 12, 8.0 + (i % 2) * 2.0,
-               (Vec4(0.86, 0.82, 0.74, 1), Vec4(0.80, 0.76, 0.82, 1))[i % 2],
-               (Vec4(0.60, 0.30, 0.26, 1), Vec4(0.42, 0.36, 0.40, 1))[i % 2])
-    for x in range(-56, 57, 4):
-        b.mesh.cylinder((x, 50, 0), 0.10, 0.10, 2.2, Vec4(0.28, 0.28, 0.32, 1),
-                        segments=5)
-    _scatter(b, rng, 170, 12, 62, "tuft", [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
-               Vec4(0.30, 0.55, 0.28, 1)],
-             avoid=lambda x, y: abs(x) < 8 or abs(y) < 8)
-    _scatter(b, rng, 60, 14, 58, "flower",
-             [Vec4(0.98, 0.95, 0.85, 1), Vec4(0.98, 0.80, 0.35, 1),
-              Vec4(0.92, 0.60, 0.80, 1)],
-             avoid=lambda x, y: abs(x) < 8 or abs(y) < 8)
-    _scatter(b, rng, 40, 6, 48, "pebble", [Vec4(0.70, 0.66, 0.58, 1)])
-    b.clip((0, 50, 2.0), (120, 0.8, 4.0))
-    if besieged:
-        _blight(b, rng, 20, Vec4(0.66, 0.62, 0.56, 1), radius=(16, 56))
+GRASS_TUFT = [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
+              Vec4(0.30, 0.55, 0.28, 1)]
+PETALS = [Vec4(0.98, 0.72, 0.82, 1), Vec4(0.98, 0.92, 0.60, 1),
+          Vec4(0.92, 0.60, 0.80, 1)]
 
 
-LEVEL_GARDENIA = Level(
-    key="gardenia", name="Gardenia Park", subtitle="Earth. No magic here. Usually.",
-    sky=Vec4(0.56, 0.78, 0.95, 1), fog=Vec4(0.76, 0.87, 0.97, 1),
-    sun=Vec4(1.0, 0.98, 0.92, 1), ambient=Vec4(0.58, 0.60, 0.66, 1),
-    start=Vec3(0, -40, 2.0), portal=Vec3(0, 40, 1.2),
-    build=_build_gardenia, gem_goal=0, gem_name="spark",
-    enemies=[Spawn(Vec3(0, 8, 2), "knut"),
-             Spawn(Vec3(-16, 2, 2), "ghoul"), Spawn(Vec3(16, 2, 2), "ghoul"),
-             Spawn(Vec3(-10, 20, 2), "ghoul"), Spawn(Vec3(10, 20, 2), "ghoul"),
-             Spawn(Vec3(0, 30, 2), "ghoul")],
-    gems=[Vec3(-22, -22, 1.4), Vec3(22, -22, 1.4), Vec3(0, 0, 2.6),
-          Vec3(34, 34, 1.6)],
-    hearts=[Vec3(-34, 0, 1.4), Vec3(34, 0, 1.4)],
-)
+def _pillar_stone(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 1.0), (0.5, 0.85), (7.0, 0.80), (7.6, 1.05)],
+             t.wall, segments=9)
+
+
+def _pillar_gothic(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 1.2), (0.6, 0.95), (9.0, 0.80)],
+             shade(t.wall, 0.9), segments=8)
+    mb.lathe((x, y, z + 9.0), [(0.0, 1.1), (2.6, 0.0)], shade(t.wall, 0.75),
+             segments=8)
+    mb.sphere((x, y, z + 11.8), 0.45, t.accent, segments=7, rings=5)
+
+
+def _pillar_tree(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 0.7), (6.0, 0.45)], Vec4(0.42, 0.30, 0.20, 1),
+             segments=8)
+    for k in range(3):
+        mb.lathe((x, y, z + 5.0 + k * 1.7), [(0.0, 3.0 - k * 0.7), (2.2, 0.0)],
+                 shade(t.floor_a, 0.85 + 0.12 * k), segments=9)
+
+
+def _pillar_coral(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 1.3), (4.0, 0.9), (7.5, 0.4)],
+             t.accent, segments=8)
+    for k in range(3):
+        a = k * 2.1
+        mb.lathe((x + math.cos(a) * 0.8, y + math.sin(a) * 0.8, z + 3.0 + k),
+                 [(0.0, 0.5), (2.2, 0.0)], shade(t.accent, 1.15), segments=6)
+
+
+def _pillar_server(mb, x, y, z, t) -> None:
+    mb.box((x, y, z + 5.0), (3.4, 3.4, 10.0), t.wall, shade(t.wall, 1.2))
+    for k in range(4):
+        mb.box((x, y - 1.8, z + 1.6 + k * 2.2), (2.2, 0.2, 0.6), t.accent)
+
+
+def _pillar_lamp(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 0.28), (4.4, 0.18)], Vec4(0.24, 0.24, 0.28, 1),
+             segments=7)
+    mb.sphere((x, y, z + 4.8), 0.5, t.accent, segments=8, rings=6)
+
+
+def _pillar_drum(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 1.9), (3.4, 1.9)], t.wall, segments=11,
+             shade_fn=lambda s: shade(t.wall, 1.0 + s * 0.1))
+    mb.lathe((x, y, z + 3.4), [(0.0, 1.95), (0.2, 1.9)],
+             Vec4(0.94, 0.90, 0.82, 1), segments=11)
+    for k in range(8):
+        a = math.tau * k / 8
+        mb.sphere((x + math.cos(a) * 1.9, y + math.sin(a) * 1.9, z + 1.7),
+                  0.22, t.accent, segments=6, rings=4)
+
+
+def _pillar_ice(mb, x, y, z, t) -> None:
+    mb.lathe((x, y, z), [(0.0, 1.4), (3.0, 1.0), (8.0, 0.0)],
+             Vec4(0.70, 0.86, 0.96, 1), segments=7)
+
+
+THEMES = {
+    "gardenia": Theme(
+        Vec4(0.46, 0.70, 0.36, 1), Vec4(0.40, 0.64, 0.33, 1),
+        wall=Vec4(0.74, 0.68, 0.56, 1), rail=Vec4(0.52, 0.36, 0.24, 1),
+        accent=Vec4(1.0, 0.92, 0.62, 1), step=4.0, jitter=0.14, relief=0.08,
+        scatter=(("tuft", GRASS_TUFT, 3.0), ("flower", PETALS, 1.0)),
+        pillar=_pillar_lamp),
+    "alfea": Theme(
+        Vec4(0.88, 0.85, 0.78, 1), Vec4(0.82, 0.79, 0.72, 1),
+        wall=Vec4(0.80, 0.77, 0.70, 1), rail=Vec4(0.90, 0.62, 0.72, 1),
+        accent=Vec4(0.62, 0.82, 1.0, 1), step=3.5, jitter=0.07,
+        scatter=(("pebble", [Vec4(0.78, 0.75, 0.68, 1)], 0.5),),
+        pillar=_pillar_stone),
+    "swamp": Theme(
+        Vec4(0.32, 0.34, 0.22, 1), Vec4(0.26, 0.29, 0.19, 1),
+        wall=Vec4(0.34, 0.26, 0.18, 1), rail=Vec4(0.28, 0.22, 0.16, 1),
+        accent=Vec4(0.60, 0.95, 0.55, 1), step=4.5, jitter=0.18, relief=0.12,
+        scatter=(("tuft", [Vec4(0.34, 0.40, 0.22, 1),
+                           Vec4(0.28, 0.34, 0.20, 1)], 3.5),
+                 ("mote", [Vec4(0.60, 0.95, 0.55, 0.85)], 1.2)),
+        pillar=_pillar_tree),
+    "cloudtower": Theme(
+        Vec4(0.32, 0.28, 0.42, 1), Vec4(0.26, 0.22, 0.36, 1),
+        wall=Vec4(0.21, 0.18, 0.30, 1), rail=Vec4(0.44, 0.34, 0.60, 1),
+        accent=Vec4(0.72, 0.38, 0.96, 1), step=4.0, jitter=0.10,
+        scatter=(("crack", [Vec4(0.14, 0.12, 0.20, 1)], 1.2),
+                 ("mote", [Vec4(0.72, 0.38, 0.96, 0.9)], 1.0)),
+        pillar=_pillar_gothic),
+    "roccaluce": Theme(
+        Vec4(0.82, 0.87, 0.93, 1), Vec4(0.74, 0.80, 0.89, 1),
+        wall=Vec4(0.62, 0.70, 0.80, 1), rail=Vec4(0.70, 0.86, 0.96, 1),
+        accent=Vec4(0.95, 0.92, 0.72, 1), step=4.5, jitter=0.09, relief=0.10,
+        scatter=(("pebble", [Vec4(0.90, 0.93, 0.97, 1)], 1.6),
+                 ("mote", [Vec4(0.85, 0.95, 1.0, 0.9)], 1.4)),
+        pillar=_pillar_ice),
+    "redfountain": Theme(
+        Vec4(0.58, 0.50, 0.38, 1), Vec4(0.51, 0.44, 0.34, 1),
+        wall=Vec4(0.70, 0.34, 0.29, 1), rail=Vec4(0.92, 0.78, 0.38, 1),
+        accent=Vec4(0.95, 0.82, 0.42, 1), step=4.0, jitter=0.14, relief=0.06,
+        scatter=(("pebble", [Vec4(0.58, 0.52, 0.42, 1)], 1.8),),
+        pillar=_pillar_stone),
+    "pixievillage": Theme(
+        Vec4(0.46, 0.76, 0.42, 1), Vec4(0.40, 0.70, 0.38, 1),
+        wall=Vec4(0.56, 0.42, 0.28, 1), rail=Vec4(0.92, 0.55, 0.62, 1),
+        accent=Vec4(0.98, 0.78, 0.35, 1), step=3.5, jitter=0.15, relief=0.07,
+        scatter=(("tuft", GRASS_TUFT, 4.0), ("flower", PETALS, 2.5)),
+        pillar=_pillar_tree),
+    "solaria": Theme(
+        Vec4(0.94, 0.90, 0.80, 1), Vec4(0.88, 0.83, 0.72, 1),
+        wall=Vec4(0.92, 0.88, 0.80, 1), rail=Vec4(0.96, 0.78, 0.32, 1),
+        accent=Vec4(1.0, 0.86, 0.36, 1), step=4.0, jitter=0.08,
+        scatter=(("pebble", [Vec4(0.90, 0.82, 0.62, 1)], 0.8),),
+        pillar=_pillar_stone),
+    "lynphea": Theme(
+        Vec4(0.34, 0.62, 0.32, 1), Vec4(0.28, 0.55, 0.29, 1),
+        wall=Vec4(0.44, 0.32, 0.22, 1), rail=Vec4(0.36, 0.58, 0.32, 1),
+        accent=Vec4(0.98, 0.55, 0.72, 1), step=4.0, jitter=0.16, relief=0.10,
+        scatter=(("tuft", GRASS_TUFT, 4.5), ("flower", PETALS, 2.0)),
+        pillar=_pillar_tree),
+    "melody": Theme(
+        Vec4(0.80, 0.68, 0.64, 1), Vec4(0.73, 0.61, 0.58, 1),
+        wall=Vec4(0.78, 0.26, 0.30, 1), rail=Vec4(0.92, 0.76, 0.36, 1),
+        accent=Vec4(0.92, 0.76, 0.36, 1), step=4.0, jitter=0.11, relief=0.05,
+        scatter=(("pebble", [Vec4(0.70, 0.58, 0.54, 1)], 1.0),),
+        pillar=_pillar_drum),
+    "zenith": Theme(
+        Vec4(0.16, 0.24, 0.28, 1), Vec4(0.12, 0.19, 0.24, 1),
+        wall=Vec4(0.40, 0.46, 0.54, 1), rail=Vec4(0.25, 0.90, 0.85, 1),
+        accent=Vec4(0.25, 0.90, 0.85, 1), step=3.0, jitter=0.16,
+        scatter=(("mote", [Vec4(0.25, 0.90, 0.85, 0.9)], 1.6),),
+        pillar=_pillar_server),
+    "andros": Theme(
+        Vec4(0.72, 0.78, 0.80, 1), Vec4(0.64, 0.72, 0.76, 1),
+        wall=Vec4(0.60, 0.68, 0.72, 1), rail=Vec4(0.45, 0.82, 0.92, 1),
+        accent=Vec4(0.95, 0.52, 0.58, 1), step=4.0, jitter=0.10,
+        scatter=(("pebble", [Vec4(0.80, 0.84, 0.86, 1)], 1.2),
+                 ("mote", [Vec4(0.55, 0.90, 1.0, 0.8)], 1.0)),
+        pillar=_pillar_coral),
+}
+
+
+def _darken(theme: Theme, tint=Vec4(0.62, 0.58, 0.52, 1)) -> Theme:
+    """A besieged version of a theme: drained, with the trim gone sour."""
+    def d(c, k=0.62):
+        return Vec4(c[0] * k * tint[0] * 1.6, c[1] * k * tint[1] * 1.6,
+                    c[2] * k * tint[2] * 1.6, c[3])
+    return Theme(d(theme.floor_a), d(theme.floor_b), wall=d(theme.wall),
+                 rail=d(theme.rail), accent=Vec4(0.72, 0.82, 0.34, 1),
+                 step=theme.step, jitter=theme.jitter + 0.04,
+                 relief=theme.relief,
+                 scatter=(("crack", [Vec4(0.16, 0.14, 0.12, 1)], 1.6),
+                          ("pebble", [Vec4(0.34, 0.32, 0.26, 1)], 1.2)),
+                 pillar=theme.pillar)
 
 
 # ---------------------------------------------------------------------------
-# Chapters 2 and 9 - Alfea College for Fairies
+# Landmarks placed beside the path
 # ---------------------------------------------------------------------------
-def _build_alfea(b: WorldBuilder, besieged: bool = False) -> None:
-    """Alfea's courtyard. ``besieged`` is the Chapter 9 state: the Army of
-    Decay is inside the barrier, so the lawns are blighted and the walls are
-    broken open."""
-    rng = random.Random(11)
-    grass_a = Vec4(0.42, 0.68, 0.36, 1)
-    grass_b = Vec4(0.36, 0.61, 0.32, 1)
+def _lm_school(b, x, y, z, h, t) -> None:
+    """Alfea's facade, seen from the courtyard."""
     stone = Vec4(0.86, 0.83, 0.76, 1)
     roof = Vec4(0.85, 0.42, 0.55, 1)
-    if besieged:
-        grass_a = Vec4(0.34, 0.34, 0.22, 1)
-        grass_b = Vec4(0.28, 0.29, 0.19, 1)
-        stone = Vec4(0.56, 0.52, 0.50, 1)
-        roof = Vec4(0.45, 0.22, 0.30, 1)
-
-    b.mesh.grid_ground(200, 200, grass_a, grass_b, step=5.5, jitter=0.14,
-                       relief=0.09, seed=4)
-    b.clip((0, 0, -2.0), (240, 240, 4.0))
-    b.bounds(92, 92)
-
-    b.mesh.grid_ground(56, 56, shade(stone, 0.98), shade(stone, 0.90),
-                       step=3.5, center=(0, 0, 0.06), jitter=0.08, seed=5)
-    b.solid((0, 0, 0.5), (9, 9, 1.0), shade(stone, 1.02))
-    b.solid((0, 0, 1.6), (5.5, 5.5, 1.4), shade(stone, 0.95))
-    b.mesh.cylinder((0, 0, 2.3), 0.8, 0.5, 3.2, shade(stone, 1.05), segments=10)
-    b.glass().sphere((0, 0, 6.0), 1.5,
-                     Vec4(0.45, 0.78, 1.0, 0.55) if not besieged
-                     else Vec4(0.70, 0.35, 0.35, 0.55), segments=12, rings=8)
-
-    # The school building itself.
-    b.solid((0, 46, 9.0), (48, 16, 18.0), stone, shade(stone, 1.06))
-    b.mesh.prism((0, 46, 20.0), (48, 16, 8.0), roof)
-    for x in (-26, 26):
-        b.tower(x, 46, 5.5, 26.0, shade(stone, 0.94), roof)
-    b.arch(0, 37.5, 9.0, 9.0, shade(stone, 1.04))
-    for x in range(-20, 21, 8):
-        for z in (6.0, 12.0):
-            b.decor().box((x, 37.85, z), (3.0, 0.3, 4.0),
-                          Vec4(0.35, 0.55, 0.85, 1) if not besieged
-                          else Vec4(0.20, 0.16, 0.20, 1))
-
-    # Terraces - the gems sit up here, so you have to fly for them.
-    for (tx, ty, tz, tw) in ((-38, 8, 6.0, 14), (38, 8, 9.0, 14),
-                             (0, -34, 12.0, 16), (-30, -26, 5.0, 10),
-                             (30, -26, 5.0, 10)):
-        b.solid((tx, ty, tz), (tw, tw, 1.4), shade(stone, 1.0),
-                Vec4(0.62, 0.78, 0.95, 1) if not besieged
-                else Vec4(0.44, 0.42, 0.38, 1))
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                b.decor().cylinder((tx + sx * (tw / 2 - 1),
-                                    ty + sy * (tw / 2 - 1), tz + 0.7),
-                                   0.4, 0.32, 2.4, shade(stone, 1.08),
-                                   segments=8)
-
-    for i, (px, py) in enumerate(((-14, -14), (-22, -20), (-30, -24))):
-        b.solid((px, py, 1.4 + i * 1.6), (5, 5, 1.0), shade(stone, 0.92))
-
-    leaf = Vec4(0.30, 0.60, 0.32, 1) if not besieged else Vec4(0.34, 0.30, 0.18, 1)
-    for _ in range(26):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(38, 82)
-        if besieged and rng.random() < 0.45:
-            _dead_tree(b, math.cos(a) * r, math.sin(a) * r, 0,
-                       rng.uniform(4.0, 6.5), Vec4(0.30, 0.26, 0.20, 1), rng)
-        else:
-            b.tree(math.cos(a) * r, math.sin(a) * r, 0, rng.uniform(3.5, 5.5),
-                   Vec4(0.42, 0.30, 0.20, 1), leaf, rng)
-    for x in range(-30, 31, 12):
-        b.solid((x, 18, 0.9), (7, 1.6, 1.8),
-                Vec4(0.28, 0.55, 0.30, 1) if not besieged
-                else Vec4(0.30, 0.28, 0.18, 1))
-
-    if besieged:
-        _scatter(b, rng, 120, 30, 84, "tuft",
-                 [Vec4(0.38, 0.34, 0.20, 1), Vec4(0.30, 0.28, 0.18, 1)])
-        _scatter(b, rng, 70, 12, 80, "crack", [Vec4(0.18, 0.15, 0.14, 1)])
-    else:
-        _scatter(b, rng, 200, 30, 88, "tuft", [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
-               Vec4(0.30, 0.55, 0.28, 1)])
-        _scatter(b, rng, 70, 32, 84, "flower",
-                 [Vec4(0.98, 0.72, 0.82, 1), Vec4(0.98, 0.92, 0.60, 1)])
-        _scatter(b, rng, 40, 30, 40, "pebble", [Vec4(0.78, 0.75, 0.68, 1)])
-
-    if besieged:
-        # Rubble where the barrier gave way, and fires in the wreckage.
-        for _ in range(22):
-            a = rng.uniform(0, math.tau)
-            r = rng.uniform(20, 70)
-            s = rng.uniform(1.4, 3.6)
-            b.solid((math.cos(a) * r, math.sin(a) * r, s * 0.35),
-                    (s, s * 1.3, s * 0.7), shade(stone, rng.uniform(0.6, 0.9)))
-        for _ in range(10):
-            a = rng.uniform(0, math.tau)
-            r = rng.uniform(24, 66)
-            b.glass().sphere((math.cos(a) * r, math.sin(a) * r,
-                              rng.uniform(0.8, 2.2)), rng.uniform(1.2, 2.4),
-                             Vec4(0.95, 0.45, 0.20, 0.45), segments=7, rings=5)
+    b.solid((x, y, z + 9.0), (48, 16, 18.0), stone, shade(stone, 1.06))
+    b.mesh.prism((x, y, z + 20.0), (48, 16, 8.0), roof)
+    for sx in (-26, 26):
+        b.tower(x + sx, y, 5.5, 26.0, shade(stone, 0.94), roof)
+    for wx in range(-20, 21, 8):
+        for wz in (6.0, 12.0):
+            b.decor().box((x + wx, y - 8.15, z + wz), (3.0, 0.3, 4.0),
+                          Vec4(0.35, 0.55, 0.85, 1))
 
 
-LEVEL_ALFEA = Level(
-    key="alfea", name="Alfea College", subtitle="Magix. Your first field exercise.",
-    sky=Vec4(0.53, 0.76, 0.96, 1), fog=Vec4(0.72, 0.85, 0.97, 1),
-    sun=Vec4(1.0, 0.97, 0.88, 1), ambient=Vec4(0.55, 0.57, 0.66, 1),
-    start=Vec3(0, -20, 2.0), portal=Vec3(0, 30, 1.2),
-    build=_build_alfea, gem_goal=5, gem_name="magic crystal",
-    enemies=[Spawn(Vec3(-20, 6, 2), "ghoul"), Spawn(Vec3(22, 4, 2), "ghoul"),
-             Spawn(Vec3(-8, 24, 2), "ghoul"), Spawn(Vec3(14, 26, 2), "ghoul"),
-             Spawn(Vec3(-34, -18, 2), "ghoul"), Spawn(Vec3(34, -16, 2), "ghoul"),
-             Spawn(Vec3(0, -44, 2), "wisp"), Spawn(Vec3(-40, 30, 8), "wisp")],
-    gems=[Vec3(-38, 8, 8.2), Vec3(38, 8, 11.2), Vec3(0, -34, 14.2),
-          Vec3(-30, -26, 7.2), Vec3(30, -26, 7.2), Vec3(0, 0, 4.6),
-          Vec3(-18, -8, 1.4), Vec3(18, -8, 1.4)],
-    hearts=[Vec3(-46, 46, 1.4), Vec3(46, 46, 1.4)],
-)
-
-LEVEL_BATTLE_ALFEA = Level(
-    key="battle_alfea", name="The Battle of Alfea",
-    subtitle="All three of them. Every student in the courtyard.",
-    sky=Vec4(0.22, 0.13, 0.18, 1), fog=Vec4(0.32, 0.20, 0.24, 1),
-    sun=Vec4(1.0, 0.72, 0.60, 1), ambient=Vec4(0.44, 0.36, 0.40, 1),
-    start=Vec3(0, -40, 2.0), portal=Vec3(0, 0, 3.6),
-    build=lambda b: _build_alfea(b, besieged=True), gem_goal=0,
-    enemies=[Spawn(Vec3(-14, 20, 10), "icy"), Spawn(Vec3(14, 20, 10), "darcy"),
-             Spawn(Vec3(0, 32, 10), "stormy"),
-             Spawn(Vec3(-24, 0, 2), "decay"), Spawn(Vec3(24, 0, 2), "decay"),
-             Spawn(Vec3(0, -14, 2), "decay"), Spawn(Vec3(-34, 24, 2), "decay"),
-             Spawn(Vec3(34, 24, 2), "decay"),
-             Spawn(Vec3(-40, -30, 2), "ghoul"), Spawn(Vec3(40, -30, 2), "ghoul")],
-    gems=[Vec3(-38, 8, 8.2), Vec3(38, 8, 11.2), Vec3(0, -34, 14.2)],
-    hearts=[Vec3(-30, -26, 7.2), Vec3(30, -26, 7.2), Vec3(0, -50, 1.6)],
-)
+def _lm_fountain(b, x, y, z, h, t) -> None:
+    stone = shade(t.wall, 1.05)
+    b.solid((x, y, z + 0.5), (9, 9, 1.0), stone)
+    b.solid((x, y, z + 1.6), (5.5, 5.5, 1.4), shade(stone, 0.95))
+    b.mesh.lathe((x, y, z + 2.3), [(0.0, 0.8), (3.2, 0.5)], stone,
+                 segments=10)
+    b.glass().sphere((x, y, z + 6.0), 1.5, Vec4(0.45, 0.78, 1.0, 0.55),
+                     segments=12, rings=8)
 
 
-# ---------------------------------------------------------------------------
-# Chapter 3 - Black Mud Swamp
-# ---------------------------------------------------------------------------
-def _build_swamp(b: WorldBuilder) -> None:
-    rng = random.Random(29)
-    mud_a = Vec4(0.30, 0.30, 0.20, 1)
-    mud_b = Vec4(0.25, 0.26, 0.17, 1)
-    bark = Vec4(0.26, 0.21, 0.16, 1)
-    water = Vec4(0.24, 0.34, 0.26, 0.66)
-    rock = Vec4(0.40, 0.40, 0.36, 1)
-
-    b.mesh.grid_ground(200, 200, mud_a, mud_b, step=6.0, jitter=0.19,
-                       relief=0.14, seed=6)
-    b.clip((0, 0, -2.0), (240, 240, 4.0))
-    b.bounds(80, 80)
-
-    # Standing water everywhere, with dry hummocks to cross on.
-    for _ in range(16):
-        x, y = rng.uniform(-66, 66), rng.uniform(-66, 66)
-        r = rng.uniform(9, 18)
-        b.glass().grid_ground(r, r, water, shade(water, 0.86, 0.66),
-                              step=r * 0.5, center=(x, y, 0.22))
-    for _ in range(30):
-        x, y = rng.uniform(-64, 64), rng.uniform(-64, 64)
-        s = rng.uniform(3.0, 7.0)
-        b.solid((x, y, 0.35), (s, s * 0.8, 0.7), shade(mud_a, 1.18))
-
-    # Knut's hut, up on stilts in the middle of the bog.
+def _lm_hut(b, x, y, z, h, t) -> None:
+    """Knut's hut, up on stilts."""
     hut = Vec4(0.38, 0.28, 0.20, 1)
     for sx in (-3.4, 3.4):
         for sy in (-3.4, 3.4):
-            b.mesh.cylinder((sx, sy, 0), 0.4, 0.34, 3.0, bark, segments=6)
-            b.boxes.append((Vec3(sx, sy, 1.5), Vec3(0.5, 0.5, 1.5)))
-    b.solid((0, 0, 3.2), (10, 10, 0.5), hut, shade(hut, 1.12))
-    b.solid((0, 4.6, 5.4), (10, 0.6, 4.0), hut)
-    b.solid((-4.6, 0, 5.4), (0.6, 10, 4.0), hut)
-    b.solid((4.6, 0, 5.4), (0.6, 10, 4.0), hut)
-    b.mesh.prism((0, 0, 8.2), (11, 11, 3.0), Vec4(0.30, 0.26, 0.18, 1))
-    for i in range(5):     # ramp up to the doorway
-        b.solid((0, -6.0 - i * 2.2, 3.0 - i * 0.55), (4.0, 2.4, 0.4),
-                shade(hut, 0.9))
-    b.decor().sphere((0, 0, 6.4), 0.7, Vec4(0.95, 0.62, 0.25, 1), segments=8,
-                     rings=6)
-
-    # Dead trees and hanging moss.
-    for _ in range(60):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(16, 74)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        _dead_tree(b, x, y, 0, rng.uniform(5.0, 11.0), bark, rng)
-        if rng.random() < 0.4:
-            b.glass().sphere((x + rng.uniform(-1, 1), y + rng.uniform(-1, 1),
-                              rng.uniform(4.0, 8.0)), rng.uniform(1.0, 2.2),
-                             Vec4(0.34, 0.44, 0.28, 0.55), segments=7, rings=5,
-                             squash=1.8)
-
-    # Stepping stones out to the far corners, where the gems are.
-    for i, (px, py, pz) in enumerate(((-20, -20, 2.0), (-32, -30, 3.4),
-                                      (-44, -40, 4.8), (24, -24, 2.0),
-                                      (36, -34, 3.4), (30, 30, 2.6),
-                                      (-28, 34, 3.0))):
-        b.solid((px, py, pz), (7, 7, 1.0), shade(rock, 1.0),
-                shade(Vec4(0.36, 0.52, 0.34, 1), 1.1))
-
-    _scatter(b, rng, 200, 10, 74, "tuft",
-             [Vec4(0.34, 0.40, 0.22, 1), Vec4(0.28, 0.34, 0.20, 1),
-              Vec4(0.40, 0.44, 0.26, 1)])
-    _scatter(b, rng, 60, 12, 70, "pebble", [Vec4(0.36, 0.36, 0.32, 1)])
-    _scatter(b, rng, 45, 14, 70, "spark", [Vec4(0.60, 0.95, 0.55, 0.8)])
-
-    # A stranded islet, reachable only across the bridge the levers extend.
-    b.solid((28, 0, 3.0), (10, 10, 1.0), shade(rock, 1.05),
-            shade(Vec4(0.36, 0.52, 0.34, 1), 1.1))
-    b.decor().cylinder((28, 0, 4.0), 0.5, 0.4, 3.0, bark, segments=6)
-
-    for _ in range(14):
-        x, y = rng.uniform(-70, 70), rng.uniform(-70, 70)
-        if abs(x - 28) < 14 and abs(y) < 14:
-            continue                      # keep the islet and its span clear
-        s = rng.uniform(2.0, 4.5)
-        b.solid((x, y, s * 0.35), (s, s * 1.2, s * 0.7),
-                shade(rock, rng.uniform(0.75, 1.0)))
+            b.mesh.lathe((x + sx, y + sy, z), [(0.0, 0.4), (3.0, 0.34)],
+                         Vec4(0.26, 0.21, 0.16, 1), segments=6)
+    b.solid((x, y, z + 3.2), (10, 10, 0.5), hut, shade(hut, 1.12))
+    b.solid((x, y + 4.6, z + 5.4), (10, 0.6, 4.0), hut)
+    for sx in (-4.6, 4.6):
+        b.solid((x + sx, y, z + 5.4), (0.6, 10, 4.0), hut)
+    b.mesh.prism((x, y, z + 8.2), (11, 11, 3.0), Vec4(0.30, 0.26, 0.18, 1))
+    b.decor().sphere((x, y, z + 6.4), 0.7, Vec4(0.95, 0.62, 0.25, 1),
+                     segments=8, rings=6)
 
 
-LEVEL_SWAMP = Level(
-    key="swamp", name="Black Mud Swamp", subtitle="Knut's hideout. And its landlords.",
-    sky=Vec4(0.30, 0.34, 0.28, 1), fog=Vec4(0.34, 0.38, 0.30, 1),
-    sun=Vec4(0.86, 0.90, 0.76, 1), ambient=Vec4(0.42, 0.46, 0.40, 1),
-    start=Vec3(0, -46, 2.0), portal=Vec3(0, 0, 4.0),
-    build=_build_swamp, gem_goal=4, gem_name="swamp crystal",
-    enemies=[Spawn(Vec3(0, 6, 4), "knut"),
-             Spawn(Vec3(-14, -6, 2), "ghoul"), Spawn(Vec3(14, -6, 2), "ghoul"),
-             Spawn(Vec3(-10, 16, 2), "ghoul"), Spawn(Vec3(12, 18, 2), "ghoul"),
-             Spawn(Vec3(-30, 0, 2), "troll"), Spawn(Vec3(30, 4, 2), "troll"),
-             Spawn(Vec3(-24, 30, 6), "wisp"), Spawn(Vec3(26, 28, 6), "wisp")],
-    gems=[Vec3(-44, -40, 6.4), Vec3(36, -34, 5.0), Vec3(30, 30, 4.2),
-          Vec3(-28, 34, 4.6), Vec3(0, 0, 4.6), Vec3(-20, -20, 3.6)],
-    hearts=[Vec3(-32, -30, 5.0), Vec3(24, -24, 3.6)],
-)
-
-
-# ---------------------------------------------------------------------------
-# Chapters 4 and 8 - Cloud Tower School for Witches
-# ---------------------------------------------------------------------------
-def _build_cloudtower(b: WorldBuilder, fallen: bool = False) -> None:
-    """Cloud Tower. ``fallen`` is Chapter 8: the Trix hold the school and the
-    Army of Decay is loose in it, so the rune lights have gone rotten."""
-    rng = random.Random(47)
-    slab_a = Vec4(0.30, 0.26, 0.40, 1)
-    slab_b = Vec4(0.25, 0.21, 0.35, 1)
-    obsidian = Vec4(0.19, 0.16, 0.28, 1)
-    rune = Vec4(0.70, 0.35, 0.95, 1)
-    if fallen:
-        slab_a = Vec4(0.28, 0.26, 0.26, 1)
-        slab_b = Vec4(0.23, 0.22, 0.22, 1)
-        rune = Vec4(0.55, 0.72, 0.28, 1)     # decay green, not witch violet
-
-    b.mesh.grid_ground(110, 110, slab_a, slab_b, step=4.5, jitter=0.12,
-                       seed=7)
-    b.clip((0, 0, -2.0), (130, 130, 4.0))
-    b.bounds(52, 52, height=90)
-
-    # Outer ring of buttresses, each capped with a rune light.
-    segs = 24
-    for i in range(segs):
-        a = math.tau * i / segs
-        x, y = math.cos(a) * 48.0, math.sin(a) * 48.0
-        h = 14.0 + (4.0 if i % 3 == 0 else 0.0)
-        b.solid((x, y, h * 0.5), (6.0, 6.0, h),
-                shade(obsidian, 0.9 + 0.2 * (i % 2)))
-        if i % 3 == 0:
-            b.decor().sphere((x * 0.86, y * 0.86, h + 1.2), 0.85, rune,
-                             segments=8, rings=6)
-
-    # The tower proper: a stack of twisted spires around a central hall.
-    for i in range(6):
-        a = math.tau * i / 6
-        _spire(b, math.cos(a) * 22.0, math.sin(a) * 22.0, 3.4,
-               20.0 + (i % 3) * 6.0, obsidian, rune)
-    b.solid((0, 26, 11.0), (26, 12, 22.0), shade(obsidian, 1.1),
-            shade(slab_a, 1.1))
-    _spire(b, 0, 26, 7.0, 34.0, shade(obsidian, 1.05), rune, segments=12)
-    b.arch(0, 19.0, 8.0, 10.0, shade(slab_a, 1.15))
-
-    # Stepped dais at the centre, and the floating stairs up to it.
-    for i, r in enumerate((17.0, 13.0, 9.0)):
-        b.solid((0, 0, 0.6 + i * 1.4), (r * 2, r * 2, 1.4),
-                shade(slab_a, 1.0 + i * 0.06))
-    b.decor().cylinder((0, 0, 4.8), 3.2, 2.4, 1.0, shade(rune, 0.6),
-                       segments=14)
-
-    # Four floating platforms - the fight goes vertical fast.
-    for i in range(4):
-        a = math.tau * i / 4 + math.pi / 4
-        x, y = math.cos(a) * 30.0, math.sin(a) * 30.0
-        b.solid((x, y, 10.0), (8, 8, 1.4), shade(slab_a, 1.1), rune)
-        b.decor().cylinder((x, y, 0), 1.5, 1.0, 9.3, obsidian, segments=9)
-    # A spiral of steps so a grounded player can still get up there.
-    for i in range(10):
-        a = math.tau * i / 10 * 1.6
-        b.solid((math.cos(a) * 21.0, math.sin(a) * 21.0, 2.0 + i * 0.95),
-                (5.5, 5.5, 0.9), shade(slab_b, 1.15))
-
-    _scatter(b, rng, 80, 8, 46, "crack", [shade(obsidian, 0.6)])
-    _scatter(b, rng, 55, 10, 46, "spark",
-             [Vec4(rune[0], rune[1], rune[2], 0.9)])
-    for _ in range(30):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(6, 50)
-        b.glass().sphere((math.cos(a) * r, math.sin(a) * r,
-                          rng.uniform(30, 44)), rng.uniform(4, 10),
-                         Vec4(0.34, 0.30, 0.46, 0.45) if not fallen
-                         else Vec4(0.32, 0.34, 0.24, 0.50),
-                         segments=8, rings=5, squash=0.45)
-
-
-LEVEL_CLOUDTOWER = Level(
-    key="cloudtower", name="Cloud Tower", subtitle="The corridors move. The Book of Fate does not.",
-    sky=Vec4(0.15, 0.11, 0.22, 1), fog=Vec4(0.22, 0.17, 0.32, 1),
-    sun=Vec4(0.80, 0.72, 1.0, 1), ambient=Vec4(0.40, 0.36, 0.52, 1),
-    start=Vec3(0, -40, 2.0), portal=Vec3(0, 0, 5.8),
-    build=_build_cloudtower, gem_goal=4, gem_name="page",
-    enemies=[Spawn(Vec3(0, 14, 10), "darcy"),
-             Spawn(Vec3(-30, 30, 12), "wisp"), Spawn(Vec3(30, 30, 12), "wisp"),
-             Spawn(Vec3(-30, -30, 12), "wisp"), Spawn(Vec3(30, -30, 12), "wisp"),
-             Spawn(Vec3(-18, 0, 3), "ghoul"), Spawn(Vec3(18, 0, 3), "ghoul"),
-             Spawn(Vec3(0, -20, 3), "ghoul")],
-    gems=[Vec3(-30, 30, 12.5), Vec3(30, 30, 12.5), Vec3(-30, -30, 12.5),
-          Vec3(30, -30, 12.5), Vec3(0, 0, 6.2)],
-    hearts=[Vec3(0, -34, 1.6), Vec3(0, 34, 1.6)],
-)
-
-LEVEL_SIEGE_CLOUDTOWER = Level(
-    key="siege_cloudtower", name="Cloud Tower Has Fallen",
-    subtitle="The Army of Decay holds the school.",
-    sky=Vec4(0.14, 0.14, 0.11, 1), fog=Vec4(0.22, 0.22, 0.16, 1),
-    sun=Vec4(0.86, 0.90, 0.66, 1), ambient=Vec4(0.40, 0.42, 0.34, 1),
-    start=Vec3(0, -40, 2.0), portal=Vec3(0, 0, 5.8),
-    build=lambda b: _build_cloudtower(b, fallen=True), gem_goal=0,
-    enemies=[Spawn(Vec3(0, 14, 10), "icy"),
-             Spawn(Vec3(-20, 0, 3), "decay"), Spawn(Vec3(20, 0, 3), "decay"),
-             Spawn(Vec3(0, -18, 3), "decay"), Spawn(Vec3(-14, 24, 3), "decay"),
-             Spawn(Vec3(14, 24, 3), "decay"),
-             Spawn(Vec3(-30, 30, 12), "wisp"), Spawn(Vec3(30, 30, 12), "wisp"),
-             Spawn(Vec3(-34, -30, 3), "ghoul"), Spawn(Vec3(34, -30, 3), "ghoul")],
-    gems=[Vec3(-30, 30, 12.5), Vec3(30, 30, 12.5)],
-    hearts=[Vec3(0, -34, 1.6), Vec3(0, 34, 1.6), Vec3(0, 0, 6.2)],
-)
-
-
-# ---------------------------------------------------------------------------
-# Chapter 5 - Lake Roccaluce
-# ---------------------------------------------------------------------------
-def _build_roccaluce(b: WorldBuilder) -> None:
-    rng = random.Random(67)
-    snow_a = Vec4(0.82, 0.86, 0.92, 1)
-    snow_b = Vec4(0.75, 0.80, 0.88, 1)
-    ice = Vec4(0.66, 0.84, 0.95, 1)
-    rock = Vec4(0.48, 0.50, 0.56, 1)
-    pine = Vec4(0.22, 0.36, 0.34, 1)
-
-    b.mesh.grid_ground(200, 200, snow_a, snow_b, step=6.0, jitter=0.09,
-                       relief=0.12, seed=8)
-    b.clip((0, 0, -2.0), (240, 240, 4.0))
-    b.bounds(78, 78)
-
-    # The frozen lake: a broad sheet of ice in the middle of the bowl.
-    b.mesh.grid_ground(84, 84, shade(ice, 1.04), shade(ice, 0.94), step=5.25,
-                       center=(0, 0, 0.08), jitter=0.11, seed=9)
-    b.glass().grid_ground(84, 84, Vec4(0.70, 0.88, 1.0, 0.30),
-                          Vec4(0.62, 0.82, 0.98, 0.30), step=10.5,
-                          center=(0, 0, 0.30))
-
-    # Ice shards pushed up through the surface - cover, and something to fly over.
-    for _ in range(34):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(10, 40)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        h = rng.uniform(3.0, 9.0)
-        b.solid((x, y, h * 0.42), (rng.uniform(1.6, 3.4),
-                                   rng.uniform(1.6, 3.4), h),
-                Vec4(ice[0], ice[1], ice[2], 1))
-        b.decor().cylinder((x, y, h * 0.9), rng.uniform(0.8, 1.6), 0.0,
-                           rng.uniform(2.0, 4.5), shade(ice, 1.15), segments=6)
-
-    # Daphne's shrine at the heart of the lake, where the water never froze.
+def _lm_shrine(b, x, y, z, h, t) -> None:
+    """Daphne's shrine at the heart of the lake."""
+    rock = shade(t.wall, 1.0)
     for i, r in enumerate((11.0, 8.0, 5.5)):
-        b.solid((0, 0, 0.5 + i * 1.1), (r * 2, r * 2, 1.1),
+        b.solid((x, y, z + 0.5 + i * 1.1), (r * 2, r * 2, 1.1),
                 shade(rock, 1.0 + i * 0.05))
     for i in range(8):
         a = math.tau * i / 8
-        px, py = math.cos(a) * 7.0, math.sin(a) * 7.0
-        b.mesh.cylinder((px, py, 3.8), 0.42, 0.34, 6.0, shade(rock, 1.1),
-                        segments=7)
-        b.boxes.append((Vec3(px, py, 6.8), Vec3(0.5, 0.5, 3.0)))
-        b.decor().sphere((px, py, 10.2), 0.5, Vec4(0.95, 0.92, 0.72, 1),
+        px, py = x + math.cos(a) * 7.0, y + math.sin(a) * 7.0
+        b.mesh.lathe((px, py, z + 3.8), [(0.0, 0.42), (6.0, 0.34)],
+                     shade(rock, 1.1), segments=7)
+        b.boxes.append((Vec3(px, py, z + 6.8), Vec3(0.5, 0.5, 3.0)))
+        b.decor().sphere((px, py, z + 10.2), 0.5, Vec4(0.95, 0.92, 0.72, 1),
                          segments=7, rings=5)
-    b.glass().sphere((0, 0, 7.0), 3.0, Vec4(0.95, 0.90, 0.70, 0.32),
+    b.glass().sphere((x, y, z + 7.0), 3.0, Vec4(0.95, 0.90, 0.70, 0.32),
                      segments=12, rings=8)
 
-    # Frozen shelves stepping up to the ridge, and pines on the shore.
-    for i, (px, py, pz) in enumerate(((-26, -22, 4.0), (-38, -30, 7.0),
-                                      (26, -22, 4.0), (38, -30, 7.0),
-                                      (-30, 28, 6.0), (30, 28, 6.0),
-                                      (0, 42, 9.0))):
-        b.solid((px, py, pz), (9, 9, 1.2), Vec4(ice[0], ice[1], ice[2], 1),
-                shade(ice, 1.18))
-    for _ in range(46):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(46, 74)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        h = rng.uniform(5.0, 9.0)
-        b.mesh.cylinder((x, y, 0), 0.42, 0.30, h * 0.4, Vec4(0.32, 0.26, 0.22, 1),
-                        segments=6)
-        for k in range(3):
-            b.mesh.cylinder((x, y, h * 0.35 + k * h * 0.22),
-                            2.2 - k * 0.6, 0.0, h * 0.40,
-                            shade(pine, 0.9 + 0.1 * k), segments=8)
-        b.boxes.append((Vec3(x, y, h * 0.4), Vec3(0.6, 0.6, h * 0.4)))
-    _scatter(b, rng, 130, 44, 76, "pebble",
-             [Vec4(0.90, 0.93, 0.97, 1), Vec4(0.84, 0.88, 0.94, 1)])
-    _scatter(b, rng, 70, 8, 40, "spark", [Vec4(0.85, 0.95, 1.0, 0.9)])
-    for _ in range(16):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(44, 70)
-        s = rng.uniform(2.5, 6.0)
-        b.solid((math.cos(a) * r, math.sin(a) * r, s * 0.4),
-                (s, s * 1.2, s * 0.8), shade(rock, rng.uniform(0.8, 1.1)))
+
+def _lm_greattree(b, x, y, z, h, t) -> None:
+    b.mesh.lathe((x, y, z), [(0.0, 4.6), (12.0, 3.2)],
+                 Vec4(0.46, 0.34, 0.24, 1), segments=14)
+    b.boxes.append((Vec3(x, y, z + 6.0), Vec3(4.2, 4.2, 6.0)))
+    for k in range(4):
+        b.mesh.lathe((x, y, z + 11.0 + k * 2.6),
+                     [(0.0, 11.0 - k * 2.2), (4.2 + k * 0.4, 0.0)],
+                     shade(Vec4(0.36, 0.68, 0.36, 1), 0.86 + 0.10 * k),
+                     segments=13)
 
 
-LEVEL_ROCCALUCE = Level(
-    key="roccaluce", name="Lake Roccaluce", subtitle="Daphne is waiting. So is Icy.",
-    sky=Vec4(0.62, 0.72, 0.86, 1), fog=Vec4(0.80, 0.87, 0.95, 1),
-    sun=Vec4(0.92, 0.95, 1.0, 1), ambient=Vec4(0.60, 0.64, 0.74, 1),
-    start=Vec3(0, -50, 2.0), portal=Vec3(0, 0, 4.2),
-    build=_build_roccaluce, gem_goal=4, gem_name="frozen tear",
-    enemies=[Spawn(Vec3(0, 16, 10), "icy"),
-             Spawn(Vec3(-20, -6, 3), "ghoul"), Spawn(Vec3(20, -6, 3), "ghoul"),
-             Spawn(Vec3(-14, 22, 3), "ghoul"), Spawn(Vec3(14, 22, 3), "ghoul"),
-             Spawn(Vec3(-32, 8, 8), "wisp"), Spawn(Vec3(32, 8, 8), "wisp"),
-             Spawn(Vec3(0, -30, 3), "troll")],
-    gems=[Vec3(-38, -30, 9.0), Vec3(38, -30, 9.0), Vec3(-30, 28, 8.0),
-          Vec3(30, 28, 8.0), Vec3(0, 42, 11.0), Vec3(0, 0, 4.6)],
-    hearts=[Vec3(-26, -22, 6.0), Vec3(26, -22, 6.0)],
-)
+def _lm_toadstool(b, x, y, z, h, t) -> None:
+    caps = [Vec4(0.95, 0.42, 0.48, 1), Vec4(0.98, 0.72, 0.30, 1),
+            Vec4(0.60, 0.55, 0.95, 1), Vec4(0.45, 0.85, 0.90, 1)]
+    cap = caps[int(abs(x + y)) % len(caps)]
+    hh = 2.6 + (int(abs(x * 3 + y)) % 4) * 0.8
+    b.mesh.lathe((x, y, z), [(0.0, 1.15), (hh, 0.95)],
+                 Vec4(0.92, 0.90, 0.80, 1), segments=9)
+    b.mesh.lathe((x, y, z + hh), [(0.0, 2.9), (2.4, 0.0)], cap, segments=11)
+    b.mesh.box((x, y - 0.98, z + 0.7), (0.9, 0.3, 1.4),
+               Vec4(0.42, 0.30, 0.22, 1))
+    b.boxes.append((Vec3(x, y, z + hh * 0.5), Vec3(1.2, 1.2, hh * 0.5)))
 
 
-# ---------------------------------------------------------------------------
-# Chapter 6 - Red Fountain School for Heroics and Bravery
-# ---------------------------------------------------------------------------
-def _build_redfountain(b: WorldBuilder) -> None:
-    rng = random.Random(83)
-    ground_a = Vec4(0.52, 0.46, 0.36, 1)
-    ground_b = Vec4(0.46, 0.41, 0.32, 1)
-    wall = Vec4(0.72, 0.36, 0.30, 1)
-    trim = Vec4(0.92, 0.78, 0.38, 1)
-    steel = Vec4(0.60, 0.62, 0.68, 1)
+def _lm_sunpalace(b, x, y, z, h, t) -> None:
+    marble, gold = t.wall, t.accent
+    for i, (wd, ht) in enumerate(((46, 4.0), (36, 4.0), (26, 4.0))):
+        b.solid((x, y, z + 2.0 + i * 4.0), (wd, 26 - i * 5, ht), marble,
+                shade(marble, 1.06))
+    b.solid((x, y, z + 15.0), (18, 16, 8.0), shade(marble, 1.04), gold)
+    b.mesh.lathe((x, y, z + 19.0), [(0.0, 7.0), (9.0, 0.0)], gold,
+                 segments=14)
+    b.decor().sphere((x, y, z + 31.0), 3.4, Vec4(1.0, 0.92, 0.45, 1),
+                     segments=14, rings=10)
 
-    b.mesh.grid_ground(190, 190, ground_a, ground_b, step=5.5, jitter=0.16,
-                       relief=0.10, seed=10)
-    b.clip((0, 0, -2.0), (230, 230, 4.0))
-    b.bounds(84, 84)
 
-    # The training arena: a sunken oval ringed by tiered seating.
-    b.mesh.grid_ground(60, 60, shade(ground_a, 1.12), shade(ground_a, 1.04),
-                       step=5.0, center=(0, 0, 0.06), jitter=0.11, seed=11)
-    for i, r in enumerate((34.0, 38.0, 42.0)):
-        segs = 28
-        for k in range(segs):
-            a = math.tau * k / segs
-            b.solid((math.cos(a) * r, math.sin(a) * r, 0.7 + i * 1.4),
-                    (6.5, 6.5, 1.4 + i * 1.4), shade(wall, 0.85 + i * 0.08))
+def _lm_harp(b, x, y, z, h, t) -> None:
+    b.solid((x + 11, y, z + 14.0), (3.2, 3.2, 28.0), t.wall)
+    b.solid((x - 11, y, z + 9.0), (3.2, 3.2, 18.0), t.wall)
+    b.solid((x, y, z + 27.0), (25, 3.0, 3.0), t.accent)
+    for k in range(10):
+        b.decor().lathe((x - 9.5 + k * 2.0, y, z + 1.0),
+                        [(0.0, 0.10), (24.0 - k * 1.6, 0.08)],
+                        Vec4(0.95, 0.92, 0.80, 1), segments=4)
 
-    # The main hall, with the launch rails the Specialists' ships run on.
-    b.solid((0, 58, 12.0), (44, 18, 24.0), wall, shade(wall, 1.1))
-    b.mesh.prism((0, 58, 27.0), (46, 19, 8.0), trim)
-    for x in (-24, 24):
-        b.tower(x, 58, 6.0, 30.0, shade(wall, 0.92), trim)
-    b.arch(0, 48.0, 10.0, 11.0, shade(trim, 0.9))
-    for x in range(-16, 17, 8):
-        b.decor().box((x, 48.4, 9.0), (3.4, 0.3, 5.0), Vec4(0.95, 0.85, 0.45, 1))
-    for sx in (-14, 14):
-        b.solid((sx, 34, 14.0), (3.0, 26, 0.8), steel)
-        b.decor().cylinder((sx, 22, 14.4), 1.5, 1.1, 4.0, shade(steel, 1.15),
-                           segments=8)
 
-    # Weapon racks and training dummies around the arena floor.
-    for i in range(10):
-        a = math.tau * i / 10
-        x, y = math.cos(a) * 24.0, math.sin(a) * 24.0
-        b.solid((x, y, 1.0), (2.4, 1.0, 2.0), Vec4(0.42, 0.32, 0.24, 1))
-        for k in (-0.6, 0.0, 0.6):
-            b.decor().cylinder((x + k, y, 2.0), 0.09, 0.06, 2.6, steel,
-                               segments=5)
-    for i in range(6):
-        a = math.tau * i / 6 + 0.4
-        x, y = math.cos(a) * 15.0, math.sin(a) * 15.0
-        b.mesh.cylinder((x, y, 0), 0.30, 0.26, 2.2, Vec4(0.40, 0.30, 0.22, 1),
-                        segments=6)
-        b.mesh.sphere((x, y, 2.7), 0.60, Vec4(0.66, 0.58, 0.46, 1),
-                      segments=8, rings=6)
-        b.boxes.append((Vec3(x, y, 1.4), Vec3(0.5, 0.5, 1.4)))
+def _lm_core(b, x, y, z, h, t) -> None:
+    for i, r in enumerate((14.0, 11.0, 8.0)):
+        b.mesh.lathe((x, y, z + i * 2.0), [(0.0, r), (2.0, r * 0.92)],
+                     t.wall, segments=6)
+        b.boxes.append((Vec3(x, y, z + i * 2.0 + 1.0), Vec3(r, r, 1.0)))
+    b.decor().lathe((x, y, z + 6.0), [(0.0, 5.0), (14.0, 3.0)],
+                    Vec4(t.accent[0], t.accent[1], t.accent[2], 1),
+                    segments=6)
+    b.glass().lathe((x, y, z + 6.0), [(0.0, 7.0), (16.0, 5.0)],
+                    Vec4(t.accent[0], t.accent[1], t.accent[2], 0.28),
+                    segments=10, cap_top=False, cap_bottom=False)
 
-    # Watchtowers and outer walls - the Trix came straight over these.
+
+def _lm_dome(b, x, y, z, h, t) -> None:
+    b.mesh.lathe((x, y, z), [(0.0, 3.2), (4.5, 3.0)], t.wall, segments=10)
+    b.mesh.sphere((x, y, z + 5.0), 3.3, Vec4(0.40, 0.72, 0.85, 1),
+                  segments=11, rings=7, squash=0.72)
+    b.boxes.append((Vec3(x, y, z + 2.5), Vec3(3.2, 3.2, 2.5)))
+
+
+def _lm_spire(b, x, y, z, h, t) -> None:
+    _spire(b, x, y, 3.4, 22.0, shade(t.wall, 0.9), t.accent)
+
+
+def _lm_house(b, x, y, z, h, t) -> None:
+    i = int(abs(x + y * 3)) % 2
+    _house(b, x, y, 14, 12, 8.0 + i * 2.0,
+           (Vec4(0.86, 0.82, 0.74, 1), Vec4(0.80, 0.76, 0.82, 1))[i],
+           (Vec4(0.60, 0.30, 0.26, 1), Vec4(0.42, 0.36, 0.40, 1))[i])
+
+
+def _lm_bandstand(b, x, y, z, h, t) -> None:
+    b.solid((x, y, z + 0.45), (16, 16, 0.9), shade(t.wall, 1.06))
     for i in range(8):
         a = math.tau * i / 8
-        x, y = math.cos(a) * 66.0, math.sin(a) * 66.0
-        b.tower(x, y, 4.0, 16.0, shade(wall, 0.88), trim, segments=9)
-    for i in range(6):
-        b.solid((-40 + i * 16, -70, 4.0), (16, 3.0, 8.0), shade(wall, 0.8))
-
-    _scatter(b, rng, 90, 8, 30, "pebble", [Vec4(0.58, 0.52, 0.42, 1)])
-    _scatter(b, rng, 60, 46, 78, "tuft",
-             [Vec4(0.44, 0.48, 0.28, 1), Vec4(0.38, 0.42, 0.24, 1)])
-    for _ in range(18):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(50, 78)
-        b.tree(math.cos(a) * r, math.sin(a) * r, 0, rng.uniform(4.0, 6.0),
-               Vec4(0.40, 0.30, 0.20, 1), Vec4(0.34, 0.48, 0.28, 1), rng)
-
-
-LEVEL_REDFOUNTAIN = Level(
-    key="redfountain", name="Red Fountain", subtitle="School of Heroics and Bravery. Under attack.",
-    sky=Vec4(0.42, 0.34, 0.44, 1), fog=Vec4(0.56, 0.44, 0.46, 1),
-    sun=Vec4(1.0, 0.86, 0.70, 1), ambient=Vec4(0.52, 0.46, 0.50, 1),
-    start=Vec3(0, -46, 2.0), portal=Vec3(0, 40, 1.4),
-    build=_build_redfountain, gem_goal=4, gem_name="codex shard",
-    enemies=[Spawn(Vec3(0, 16, 11), "stormy"),
-             Spawn(Vec3(-18, 0, 2), "ghoul"), Spawn(Vec3(18, 0, 2), "ghoul"),
-             Spawn(Vec3(-10, 24, 2), "ghoul"), Spawn(Vec3(10, 24, 2), "ghoul"),
-             Spawn(Vec3(0, -20, 2), "ghoul"),
-             Spawn(Vec3(-26, -18, 2), "troll"), Spawn(Vec3(26, -18, 2), "troll"),
-             Spawn(Vec3(-34, 26, 9), "wisp"), Spawn(Vec3(34, 26, 9), "wisp")],
-    gems=[Vec3(-14, 34, 15.6), Vec3(14, 34, 15.6), Vec3(-40, 0, 7.0),
-          Vec3(40, 0, 7.0), Vec3(0, 0, 1.6)],
-    hearts=[Vec3(-24, -24, 4.0), Vec3(24, -24, 4.0)],
-)
+        px, py = x + math.cos(a) * 5.6, y + math.sin(a) * 5.6
+        b.mesh.lathe((px, py, z + 1.0), [(0.0, 0.26), (3.6, 0.22)],
+                     Vec4(0.90, 0.88, 0.82, 1), segments=7)
+        b.boxes.append((Vec3(px, py, z + 2.8), Vec3(0.3, 0.3, 1.8)))
+    b.mesh.lathe((x, y, z + 4.6), [(0.0, 7.2), (2.6, 0.0)],
+                 Vec4(0.35, 0.52, 0.60, 1), segments=10)
 
 
 # ---------------------------------------------------------------------------
-# Chapter 7 - Pixie Village
+# Routes - each chapter laid out as a stage from start pad to goal
 # ---------------------------------------------------------------------------
-def _build_pixievillage(b: WorldBuilder) -> None:
-    rng = random.Random(97)
-    grass_a = Vec4(0.44, 0.74, 0.42, 1)
-    grass_b = Vec4(0.38, 0.68, 0.38, 1)
-    stalk = Vec4(0.92, 0.90, 0.80, 1)
-
-    b.mesh.grid_ground(180, 180, grass_a, grass_b, step=4.5, jitter=0.15,
-                       relief=0.08, seed=12)
-    b.clip((0, 0, -2.0), (220, 220, 4.0))
-    b.bounds(72, 72)
-
-    # Toadstool houses: caps in pixie colours, doors at pixie scale.
-    caps = [Vec4(0.95, 0.42, 0.48, 1), Vec4(0.98, 0.72, 0.30, 1),
-            Vec4(0.60, 0.55, 0.95, 1), Vec4(0.45, 0.85, 0.90, 1),
-            Vec4(0.95, 0.60, 0.85, 1), Vec4(0.75, 0.92, 0.45, 1)]
-    for i in range(22):
-        a = math.tau * i / 22 + rng.uniform(-0.1, 0.1)
-        r = rng.uniform(14, 44)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        h = rng.uniform(2.6, 5.2)
-        cap = caps[i % len(caps)]
-        b.mesh.cylinder((x, y, 0), 1.15, 0.95, h, stalk, segments=9)
-        b.mesh.cylinder((x, y, h), 2.9, 0.0, 2.4, cap, segments=11)
-        b.mesh.box((x, y - 0.98, 0.7), (0.9, 0.3, 1.4),
-                   Vec4(0.42, 0.30, 0.22, 1))
-        for _ in range(3):     # spots on the cap
-            sa = rng.uniform(0, math.tau)
-            b.decor().sphere((x + math.cos(sa) * 1.5, y + math.sin(sa) * 1.5,
-                              h + 0.9), 0.32, shade(cap, 1.4), segments=6,
-                             rings=5)
-        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(1.2, 1.2, h * 0.5)))
-
-    # The great tree at the centre, with the Codex vault in its roots.
-    b.mesh.cylinder((0, 0, 0), 4.6, 3.2, 12.0, Vec4(0.46, 0.34, 0.24, 1),
-                    segments=14)
-    b.boxes.append((Vec3(0, 0, 6.0), Vec3(4.2, 4.2, 6.0)))
-    for k in range(4):
-        b.mesh.cylinder((0, 0, 11.0 + k * 2.6), 11.0 - k * 2.2, 0.0,
-                        4.2 + k * 0.4, shade(Vec4(0.36, 0.68, 0.36, 1),
-                                             0.86 + 0.10 * k), segments=13)
-    # Broad roots you can run up to reach the canopy platforms.
-    for i in range(6):
-        a = math.tau * i / 6
-        for k in range(4):
-            rr = 6.0 + k * 3.6
-            b.solid((math.cos(a) * rr, math.sin(a) * rr, 0.6 + k * 1.5),
-                    (5.0, 5.0, 1.1), Vec4(0.50, 0.38, 0.26, 1),
-                    Vec4(0.42, 0.70, 0.40, 1))
-    # Canopy platforms - leaf pads held up on stems.
-    for i in range(6):
-        a = math.tau * i / 6 + 0.5
-        x, y = math.cos(a) * 20.0, math.sin(a) * 20.0
-        z = 9.0 + (i % 3) * 3.5
-        b.solid((x, y, z), (8, 8, 0.9), Vec4(0.40, 0.72, 0.40, 1),
-                Vec4(0.52, 0.85, 0.48, 1))
-        b.decor().cylinder((x, y, 0), 0.7, 0.5, z - 0.5,
-                           Vec4(0.40, 0.56, 0.32, 1), segments=7)
-
-    # Flowers and fireflies - it should read as the friendliest place so far.
-    for _ in range(70):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(8, 62)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        h = rng.uniform(0.8, 2.0)
-        b.mesh.cylinder((x, y, 0), 0.10, 0.08, h, Vec4(0.34, 0.60, 0.32, 1),
-                        segments=5)
-        b.mesh.sphere((x, y, h + 0.25), rng.uniform(0.30, 0.55),
-                      caps[rng.randrange(len(caps))], segments=7, rings=5)
-    for _ in range(26):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(10, 58)
-        b.glass().sphere((math.cos(a) * r, math.sin(a) * r,
-                          rng.uniform(2.0, 7.0)), rng.uniform(0.4, 0.8),
-                         Vec4(1.0, 0.95, 0.55, 0.60), segments=6, rings=5)
-    _scatter(b, rng, 220, 8, 66, "tuft", [Vec4(0.34, 0.62, 0.30, 1), Vec4(0.42, 0.70, 0.34, 1),
-               Vec4(0.30, 0.55, 0.28, 1)])
-    _scatter(b, rng, 140, 8, 64, "flower", caps)
-    for _ in range(20):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(50, 68)
-        b.tree(math.cos(a) * r, math.sin(a) * r, 0, rng.uniform(4.5, 7.0),
-               Vec4(0.44, 0.32, 0.22, 1), Vec4(0.34, 0.66, 0.34, 1), rng)
+def route_gardenia(c: Course):
+    """Through the park: the lawn, the bandstand, the pond path, the ogre."""
+    c.run(30, 16, rings=5).tablet(
+        "A Note on the Fridge",
+        "  'Bloom - gone to the shop, back by six. There is a casserole. Do "
+        "NOT let Kiko into the greenhouse again. Love, Mum.'\n\n"
+        "Sixteen years of a life that was never quite the whole story.")
+    c.prop(_lm_house, 24, -30).prop(_lm_house, 24, 30)
+    c.checkpoint()
+    c.run(34, 16, rings=6).foe("ghoul", 2).chest("gems", side=6)
+    c.corner(90, 22).prop(_lm_bandstand, 0, 0)
+    c.run(28, 14, rings=5).foe("ghoul", 2).puzzle("rune", side=-6,
+                                                  group="realmlights")
+    c.checkpoint()
+    c.gap(30, 3, 8).foe("wisp", 2, back=16).heart(side=0, back=14)
+    c.cache("health", side=-15, back=10)
+    c.run(26, 16, rings=6).puzzle("rune", side=6, group="realmlights")
+    c.corner(-90, 22).spring(24.0)
+    c.stairs(22, 8, 6, 14).chest("health", side=-7)
+    c.run(24, 14, rings=4).puzzle("rune", side=0, group="realmlights")
+    c.checkpoint()
+    c.arena(46).foe("knut", 1, back=22).foe("ghoul", 3, back=16, spread=12)
+    c.chest("life", side=-16, back=30)
+    return c.finish()
 
 
-LEVEL_PIXIEVILLAGE = Level(
-    key="pixievillage", name="Pixie Village", subtitle="The last piece of the Codex.",
-    sky=Vec4(0.60, 0.82, 0.92, 1), fog=Vec4(0.78, 0.90, 0.90, 1),
-    sun=Vec4(1.0, 0.98, 0.86, 1), ambient=Vec4(0.60, 0.62, 0.62, 1),
-    start=Vec3(0, -50, 2.0), portal=Vec3(0, 0, 12.6),
-    build=_build_pixievillage, gem_goal=5, gem_name="pixie",
-    enemies=[Spawn(Vec3(0, 18, 12), "darcy"),
-             Spawn(Vec3(-16, 4, 2), "ghoul"), Spawn(Vec3(16, 4, 2), "ghoul"),
-             Spawn(Vec3(-8, 26, 2), "ghoul"), Spawn(Vec3(8, 26, 2), "ghoul"),
-             Spawn(Vec3(0, -22, 2), "ghoul"), Spawn(Vec3(-30, -14, 2), "ghoul"),
-             Spawn(Vec3(30, -14, 2), "ghoul"),
-             Spawn(Vec3(-26, 26, 10), "wisp"), Spawn(Vec3(26, 26, 10), "wisp"),
-             Spawn(Vec3(0, 40, 2), "troll")],
-    gems=[Vec3(20.0, 0.0, 11.0), Vec3(-10.0, 17.3, 14.5),
-          Vec3(-10.0, -17.3, 11.0), Vec3(10.0, 17.3, 18.0),
-          Vec3(-20.0, 0.0, 11.0), Vec3(10.0, -17.3, 14.5)],
-    hearts=[Vec3(-34, -30, 1.6), Vec3(34, -30, 1.6)],
-)
+def route_alfea(c: Course):
+    """Griselda's field exercise, run as a circuit of the courtyard."""
+    c.run(28, 18, rings=5).tablet(
+        "The Barrier Stones",
+        "Four stones carry Alfea's barrier. When the school is threatened "
+        "they go dark, and only a fairy's magic will wake them. Strike each "
+        "one - the barrier will do the rest.")
+    c.checkpoint()
+    c.run(30, 18, rings=6).foe("ghoul", 2).puzzle("rune", side=-7,
+                                                  group="barrier")
+    c.corner(90, 24).prop(_lm_fountain, 0, 0)
+    c.run(30, 16, rings=5).foe("ghoul", 2).puzzle("rune", side=7,
+                                                  group="barrier")
+    c.chest("gems", side=-7)
+    c.checkpoint()
+    c.stairs(20, 7, 5, 14).foe("wisp", 2, back=10, up=6)
+    c.cache("magic", side=15, back=8)
+    c.run(26, 16, rings=5).puzzle("rune", side=0, group="barrier")
+    c.corner(90, 24).spring(25.0)
+    c.gap(26, 2, 9).heart(back=12)
+    c.run(28, 16, rings=6).foe("ghoul", 2).puzzle("rune", side=6,
+                                                  group="barrier")
+    c.chest("health", side=8)
+    c.checkpoint()
+    c.arena(48).prop(_lm_school, 30, 0).foe("ghoul", 3, back=20, spread=13)
+    c.foe("wisp", 2, back=14, spread=16, up=7)
+    return c.finish()
 
 
-# ---------------------------------------------------------------------------
-# Home realms - one per fairy, each with a peacetime and a besieged state
-# ---------------------------------------------------------------------------
-def _in_approach(x: float, y: float, half_width: float = 9.0) -> bool:
-    """True inside the corridor the player spawns in, looking north.
+def route_swamp(c: Course):
+    """Out over the bog on duckboards to Knut's hut."""
+    c.run(26, 13, rings=4).tablet(
+        "Knut's Tally",
+        "Scratched into a post at the edge of the bog: a count of "
+        "deliveries, and three marks that are not a count at all. Someone "
+        "was paying him, and paying him well.")
+    c.checkpoint()
+    c.bridge(30, 8, rings=6).foe("ghoul", 2)
+    c.gap(28, 3, 7).chest("magic", side=0, back=14)
+    c.bridge(26, 7, rings=5).foe("wisp", 2)
+    c.lever("span", side=-6).lever("span", side=6)
+    c.drawbridge(26, "span", 8.0)
+    c.corner(-90, 20)
+    c.checkpoint()
+    c.run(28, 14, rings=5).foe("troll", 1).puzzle("rune", side=-7,
+                                                  group="marshlights")
+    c.gap(30, 3, 7, lift=2.0).heart(back=16)
+    c.cache("score", side=-16, back=12)
+    c.run(24, 13, rings=4).puzzle("rune", side=7, group="marshlights")
+    c.corner(90, 20).spring(27.0)
+    c.bridge(28, 8, rings=5).foe("ghoul", 3).chest("gems", side=-6)
+    c.checkpoint()
+    c.run(22, 14, rings=4).puzzle("rune", side=0, group="marshlights")
+    c.arena(44).prop(_lm_hut, 6, 0).foe("knut", 1, back=20)
+    c.foe("troll", 2, back=14, spread=18).chest("life", side=16, back=30)
+    return c.finish()
 
-    Ring-placed props are skipped here so the first thing a chapter shows is
-    its landmark, not the back of a pillar.
+
+def route_cloudtower(c: Course):
+    """Up through a school whose corridors do not stay put."""
+    c.run(26, 14, rings=5).tablet(
+        "A Page of the Book of Fate",
+        "The lock on the inner hall answers to a verse, not a key:\n\n"
+        "  'First dusk, and then the storm;\n"
+        "   after the storm, silence;\n"
+        "   and only then, the dawn.'\n\n"
+        "Sound the four chimes in that order. Sound them wrongly and the "
+        "hall will forget you were ever here.")
+    c.checkpoint()
+    c.stairs(26, 10, 7, 13).foe("ghoul", 2)
+    c.corner(90, 20).prop(_lm_spire, 0, 16)
+    c.bridge(30, 7, rings=6).foe("wisp", 2).chest("magic", side=0, back=15)
+    c.checkpoint()
+    c.run(24, 14, rings=4).puzzle("pedestal", side=-7, group="verse", order=0,
+                                  color=Vec4(0.85, 0.45, 0.35, 1))
+    c.gap(26, 2, 8).puzzle("pedestal", side=0, group="verse", order=1,
+                           color=Vec4(0.60, 0.55, 0.95, 1), back=13)
+    c.stairs(22, 9, 6, 13).foe("ghoul", 2)
+    c.cache("magic", side=-15, back=8)
+    c.run(24, 14, rings=5).puzzle("pedestal", side=7, group="verse", order=2,
+                                  color=Vec4(0.45, 0.45, 0.55, 1))
+    c.corner(-90, 20).spring(26.0)
+    c.checkpoint()
+    c.run(26, 14, rings=5).puzzle("pedestal", side=0, group="verse", order=3,
+                                  color=Vec4(1.0, 0.88, 0.50, 1))
+    c.chest("health", side=-8).heart(side=8)
+    c.puzzle("gate", side=0, back=2, group="verse", size=(14.0, 2.0, 11.0))
+    c.arena(44).prop(_lm_spire, 18, -16).prop(_lm_spire, 18, 16)
+    c.foe("darcy", 1, back=20, up=9).foe("ghoul", 3, back=14, spread=13)
+    return c.finish()
+
+
+def route_roccaluce(c: Course):
+    """Across the frozen lake to the shrine, then out onto thin ice."""
+    c.run(28, 16, rings=5).tablet(
+        "Daphne's Marker",
+        "Set at the lake's edge, in a hand that has not written anything "
+        "for sixteen years:\n\n"
+        "  'Four lights stood over Domino the night it fell. Wake them and "
+        "I will hear you, wherever I am now.'")
+    c.checkpoint()
+    c.run(30, 15, rings=6).foe("ghoul", 2).puzzle("rune", side=-7,
+                                                  group="lights")
+    c.gap(30, 3, 8).chest("gems", side=0, back=15)
+    c.corner(90, 22)
+    c.bridge(28, 8, rings=5).foe("wisp", 2).puzzle("rune", side=6,
+                                                   group="lights")
+    c.checkpoint()
+    c.stairs(20, 7, 5, 14).heart(side=-6)
+    c.cache("health", side=15, back=8)
+    c.run(26, 15, rings=5).puzzle("rune", side=7, group="lights")
+    c.corner(-90, 22).spring(25.0)
+    c.gap(28, 3, 7, lift=3.0).chest("magic", side=0, back=14)
+    c.run(24, 15, rings=4).foe("troll", 1).puzzle("rune", side=0,
+                                                  group="lights")
+    c.checkpoint()
+    c.arena(46).prop(_lm_shrine, 4, 0).foe("icy", 1, back=22, up=10)
+    c.foe("ghoul", 3, back=14, spread=13).chest("life", side=-17, back=30)
+    return c.finish()
+
+
+def route_redfountain(c: Course):
+    """Up the rails and into the arena while the school is under attack."""
+    c.run(26, 16, rings=5).tablet(
+        "Vault Protocol",
+        "Posted beside the arena, in Codatorta's handwriting:\n\n"
+        "  'The vault does not open to magic - that is the point of it. Two "
+        "counterweights onto the two floor plates, and it opens to anyone "
+        "strong enough to push them.'")
+    c.checkpoint()
+    c.run(30, 16, rings=6).foe("ghoul", 3, spread=11)
+    c.corner(90, 22).spring(24.0)
+    c.stairs(24, 9, 6, 14).chest("magic", side=-8)
+    c.bridge(30, 8, rings=6).foe("wisp", 2)
+    c.cache("score", side=-15, back=12)
+    c.checkpoint()
+    # The run is widened here and the counterweights sit well inboard:
+    # a block flush against a rail has nowhere to be pushed.
+    c.run(30, 24, rings=5).foe("troll", 1)
+    c.puzzle("plate", side=-5, group="vault").puzzle("plate", side=5,
+                                                     group="vault")
+    c.puzzle("block", side=-5, back=24, size=(4.0, 4.0, 4.0))
+    c.puzzle("block", side=5, back=24, size=(4.0, 4.0, 4.0))
+    c.puzzle("gate", side=0, back=1, group="vault", size=(15.0, 2.0, 10.0),
+             color=Vec4(0.66, 0.40, 0.34, 1))
+    c.corner(-90, 22).heart(side=0)
+    c.run(26, 16, rings=5).foe("ghoul", 2).chest("health", side=8)
+    c.checkpoint()
+    c.arena(48).foe("stormy", 1, back=22, up=10)
+    c.foe("troll", 2, back=15, spread=18).chest("life", side=17, back=30)
+    return c.finish()
+
+
+def route_pixievillage(c: Course):
+    """Through the toadstools and up the roots of the great tree."""
+    c.run(26, 15, rings=5).tablet(
+        "The Pixies' Rhyme",
+        "Painted around the base of the great tree, small enough that you "
+        "have to kneel:\n\n"
+        "  'Green wakes, then blue,\n"
+        "   gold after, red too,\n"
+        "   and violet last of all -\n"
+        "   then the roots let you through.'")
+    for s in (-11, 11):
+        c.prop(_lm_toadstool, -14, s)
+    c.checkpoint()
+    c.run(28, 15, rings=6).foe("ghoul", 2)
+    c.puzzle("pedestal", side=-7, group="rhyme", order=0,
+             color=Vec4(0.45, 0.92, 0.45, 1))
+    c.prop(_lm_toadstool, -8, 13)
+    c.corner(90, 22)
+    c.run(26, 14, rings=5).puzzle("pedestal", side=7, group="rhyme", order=1,
+                                  color=Vec4(0.40, 0.70, 1.00, 1))
+    c.chest("gems", side=-7)
+    c.gap(26, 2, 8).heart(back=13)
+    c.cache("magic", side=16, back=10)
+    c.checkpoint()
+    c.stairs(24, 10, 6, 14).foe("wisp", 2, up=6)
+    c.run(24, 14, rings=4).puzzle("pedestal", side=0, group="rhyme", order=2,
+                                  color=Vec4(1.00, 0.85, 0.35, 1))
+    c.corner(-90, 22).spring(27.0)
+    c.run(26, 14, rings=5).puzzle("pedestal", side=-7, group="rhyme", order=3,
+                                  color=Vec4(0.95, 0.35, 0.40, 1))
+    c.chest("health", side=8)
+    c.checkpoint()
+    c.run(22, 14, rings=4).puzzle("pedestal", side=7, group="rhyme", order=4,
+                                  color=Vec4(0.72, 0.45, 0.95, 1))
+    c.arena(46).prop(_lm_greattree, 4, 0).foe("darcy", 1, back=22, up=10)
+    c.foe("ghoul", 3, back=14, spread=13).chest("life", side=-16, back=30)
+    return c.finish()
+
+
+# --- Home realms: one route shape per realm, reused for its siege ----------
+def _home_route(c: Course, landmark, lore_title, lore_text, boss,
+                mob="ghoul", besieged=False):
+    """A realm's stage: out from the gate, around, and back to the landmark.
+
+    Calm and besieged runs share the layout so the return visit is
+    recognisably the same place; only the theme, the enemies and the
+    objectives differ.
     """
-    return y < -6.0 and abs(x) < half_width
-
-
-def _blight(b: WorldBuilder, rng, count: int, rubble: Vec4,
-            radius=(20, 70)) -> None:
-    """Rubble and burning wreckage, shared by every besieged variant."""
-    for _ in range(count):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(*radius)
-        s = rng.uniform(1.4, 3.8)
-        b.solid((math.cos(a) * r, math.sin(a) * r, s * 0.35),
-                (s, s * 1.3, s * 0.7), shade(rubble, rng.uniform(0.55, 0.9)))
-    for _ in range(count // 2):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(*radius)
-        b.glass().sphere((math.cos(a) * r, math.sin(a) * r,
-                          rng.uniform(0.8, 2.4)), rng.uniform(1.2, 2.6),
-                         Vec4(0.95, 0.45, 0.20, 0.45), segments=7, rings=5)
-
-
-# --- Solaria (Stella) ------------------------------------------------------
-def _build_solaria(b: WorldBuilder, besieged: bool = False) -> None:
-    """The Sun Palace: white marble and gold under a permanent noon."""
-    rng = random.Random(211)
-    marble = Vec4(0.94, 0.91, 0.84, 1)
-    gold = Vec4(0.96, 0.78, 0.32, 1)
-    sand = Vec4(0.90, 0.82, 0.62, 1)
-    if besieged:
-        marble = Vec4(0.62, 0.58, 0.56, 1)
-        gold = Vec4(0.66, 0.52, 0.26, 1)
-        sand = Vec4(0.58, 0.52, 0.42, 1)
-
-    b.mesh.grid_ground(190, 190, sand, shade(sand, 0.94), step=6.0,
-                       jitter=0.14, relief=0.11, seed=13)
-    b.clip((0, 0, -2.0), (230, 230, 4.0))
-    b.bounds(80, 80)
-
-    # A vast tiled plaza in front of the palace steps.
-    b.mesh.grid_ground(76, 76, shade(marble, 1.0), shade(marble, 0.92),
-                       step=4.75, center=(0, 0, 0.06), jitter=0.07, seed=14)
-
-    # The palace: a stepped ziggurat crowned with the sun disc.
-    for i, (w, h) in enumerate(((46, 4.0), (36, 4.0), (26, 4.0))):
-        b.solid((0, 44, 2.0 + i * 4.0), (w, 26 - i * 5, h), marble,
-                shade(marble, 1.06))
-    b.solid((0, 44, 15.0), (18, 16, 8.0), shade(marble, 1.04), gold)
-    b.mesh.cylinder((0, 44, 19.0), 7.0, 0.0, 9.0, gold, segments=14)
-    b.decor().sphere((0, 44, 31.0), 3.4, Vec4(1.0, 0.92, 0.45, 1),
-                     segments=14, rings=10)
-    for sx in (-1, 1):
-        b.tower(sx * 26, 44, 5.0, 24.0, shade(marble, 0.96), gold)
-
-    # Colonnade around the plaza - gold pillars, and something to fly between.
-    for i in range(20):
-        a = math.tau * i / 20
-        x, y = math.cos(a) * 34.0, math.sin(a) * 34.0
-        if _in_approach(x, y):
-            continue
-        b.mesh.cylinder((x, y, 0), 1.3, 1.1, 11.0, marble, segments=9)
-        b.mesh.cylinder((x, y, 11.0), 1.7, 1.5, 1.2, gold, segments=9)
-        b.boxes.append((Vec3(x, y, 6.0), Vec3(1.4, 1.4, 6.0)))
-
-    # Floating sun terraces - Solaria's rings, in miniature.
-    for i in range(6):
-        a = math.tau * i / 6 + 0.4
-        x, y = math.cos(a) * 22.0, math.sin(a) * 22.0
-        z = 13.0 + (i % 3) * 4.0
-        b.solid((x, y, z), (9, 9, 1.2), shade(marble, 1.05), gold)
-        b.decor().cylinder((x, y, z + 0.7), 0.6, 0.0, 3.0, gold, segments=8)
-
-    # Obelisks and reflecting pools out on the sand.
-    for i in range(8):
-        a = math.tau * i / 8 + 0.2
-        x, y = math.cos(a) * 58.0, math.sin(a) * 58.0
-        if _in_approach(x, y):
-            continue
-        h = rng.uniform(10.0, 16.0)
-        b.solid((x, y, h * 0.5), (3.0, 3.0, h), shade(gold, 0.9))
-        b.decor().cylinder((x, y, h), 2.1, 0.0, 4.0, gold, segments=6)
+    c.run(28, 16, rings=5).tablet(lore_title, lore_text)
+    c.checkpoint()
+    c.run(30, 16, rings=6).foe(mob, 2)
     if not besieged:
-        for (px, py) in ((-38, -14), (38, -14)):
-            b.glass().grid_ground(20, 20, Vec4(0.55, 0.82, 0.95, 0.55),
-                                  Vec4(0.48, 0.76, 0.92, 0.55), step=10.0,
-                                  center=(px, py, 0.28))
-    else:
-        _blight(b, rng, 20, marble, radius=(18, 62))
+        c.puzzle("rune", side=-7, group="realmlights")
+    c.chest("gems", side=7)
+    c.corner(90, 22).prop(landmark, 2, 20)
+    c.run(28, 15, rings=5).foe(mob, 2)
+    if not besieged:
+        c.puzzle("rune", side=7, group="realmlights")
+    c.checkpoint()
+    c.gap(28, 3, 8).heart(back=14)
+    c.cache("health" if not besieged else "magic", side=-15, back=12)
+    c.stairs(22, 8, 6, 14).chest("magic", side=-8)
+    c.run(26, 15, rings=5).foe("wisp", 2)
+    if not besieged:
+        c.puzzle("rune", side=0, group="realmlights")
+    c.corner(-90, 22).spring(26.0)
+    c.run(28, 15, rings=6).foe(mob, 2).chest("health", side=8)
+    c.checkpoint()
+    c.arena(46).prop(landmark, 4, 0)
+    c.foe(boss, 1, back=22, up=0 if boss == "knut" else 10)
+    c.foe(mob, 3, back=14, spread=13).chest("life", side=-16, back=30)
+    return c.finish()
 
 
-# --- Lynphea (Flora) -------------------------------------------------------
-def _build_lynphea(b: WorldBuilder, besieged: bool = False) -> None:
-    """A world grown past human scale: flowers taller than the fairies."""
-    rng = random.Random(223)
-    moss = Vec4(0.32, 0.58, 0.30, 1)
-    moss_b = Vec4(0.27, 0.51, 0.27, 1)
-    bark = Vec4(0.42, 0.31, 0.22, 1)
-    petal = [Vec4(0.98, 0.55, 0.72, 1), Vec4(0.95, 0.72, 0.35, 1),
-             Vec4(0.72, 0.55, 0.95, 1), Vec4(0.98, 0.92, 0.55, 1)]
-    if besieged:
-        moss = Vec4(0.36, 0.34, 0.20, 1)
-        moss_b = Vec4(0.30, 0.29, 0.17, 1)
-        petal = [shade(p, 0.45) for p in petal]
+# ---------------------------------------------------------------------------
+# Level assembly
+# ---------------------------------------------------------------------------
+def course_level(key, name, subtitle, theme, route, sky, fog, sun, ambient,
+                 gem_name="crystal", objectives=(), gem_goal=0,
+                 seed=7) -> Level:
+    """Run a route once to collect its content, and keep it as a Level.
 
-    b.mesh.grid_ground(190, 190, moss, moss_b, step=5.5, jitter=0.18,
-                       relief=0.11, seed=15)
-    b.clip((0, 0, -2.0), (230, 230, 4.0))
-    b.bounds(80, 80)
+    The route is deterministic, so rebuilding the geometry at load time
+    reproduces exactly the layout these anchors were taken from.
+    """
+    probe = WorldBuilder()
+    anchors = route(Course(probe, theme, seed=seed))
 
-    # Colossal flowers: a stem you can walk around and a petal disc on top.
-    for i in range(14):
-        a = math.tau * i / 14 + rng.uniform(-0.15, 0.15)
-        r = rng.uniform(18, 52)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        if _in_approach(x, y, 11.0):
-            continue
-        h = rng.uniform(8.0, 18.0)
-        col = petal[i % len(petal)]
-        b.mesh.cylinder((x, y, 0), 1.0, 0.7, h, Vec4(0.34, 0.56, 0.30, 1),
-                        segments=8)
-        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(1.0, 1.0, h * 0.5)))
-        # The petal disc doubles as a platform.
-        b.solid((x, y, h), (11, 11, 0.9), col, shade(col, 1.15))
-        for k in range(7):
-            pa = math.tau * k / 7
-            b.decor().cylinder((x + math.cos(pa) * 5.4, y + math.sin(pa) * 5.4,
-                                h + 0.4), 2.2, 0.0, 2.0, shade(col, 1.1),
-                               segments=6)
-        b.decor().sphere((x, y, h + 1.2), 1.8, Vec4(0.98, 0.88, 0.40, 1),
-                         segments=9, rings=6, squash=0.5)
-
-    # The heart of the grove: one enormous tree with a spiral of broad roots.
-    b.mesh.cylinder((0, 0, 0), 6.0, 4.0, 20.0, bark, segments=16)
-    b.boxes.append((Vec3(0, 0, 10.0), Vec3(5.4, 5.4, 10.0)))
-    for k in range(5):
-        b.mesh.cylinder((0, 0, 18.0 + k * 3.0), 16.0 - k * 3.0, 0.0,
-                        5.0 + k * 0.5, shade(moss, 0.80 + 0.12 * k),
-                        segments=14)
-    for i in range(10):
-        a = math.tau * i / 10 * 1.8
-        b.solid((math.cos(a) * (8.0 + i * 0.9), math.sin(a) * (8.0 + i * 0.9),
-                 1.0 + i * 1.7), (6.0, 6.0, 1.1), bark, shade(moss, 1.2))
-
-    # Vines, ferns and mushrooms filling the floor.
-    for _ in range(80):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(10, 72)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        kind = rng.random()
-        if kind < 0.45:
-            hh = rng.uniform(1.4, 3.2)
-            for k in range(3):
-                b.mesh.cylinder((x, y, hh * 0.3 * k), 2.0 - k * 0.5, 0.2,
-                                hh * 0.5, shade(moss, 0.9 + 0.15 * k),
-                                segments=7)
-        elif kind < 0.75:
-            hh = rng.uniform(1.0, 2.6)
-            b.mesh.cylinder((x, y, 0), 0.30, 0.26, hh,
-                            Vec4(0.88, 0.86, 0.76, 1), segments=6)
-            b.mesh.cylinder((x, y, hh), 1.5, 0.0, 1.2,
-                            petal[rng.randrange(len(petal))], segments=8)
-        else:
-            b.mesh.cylinder((x, y, 0), 0.14, 0.10, rng.uniform(1.0, 2.2),
-                            Vec4(0.34, 0.58, 0.30, 1), segments=5)
-            b.mesh.sphere((x, y, rng.uniform(1.2, 2.4)), rng.uniform(0.3, 0.6),
-                          petal[rng.randrange(len(petal))], segments=6, rings=5)
-    for _ in range(24):
-        a = rng.uniform(0, math.tau)
-        r = rng.uniform(56, 76)
-        b.tree(math.cos(a) * r, math.sin(a) * r, 0, rng.uniform(6.0, 10.0),
-               bark, shade(moss, rng.uniform(0.85, 1.15)), rng)
-    if besieged:
-        _blight(b, rng, 22, Vec4(0.40, 0.34, 0.24, 1))
+    lv = Level(
+        key=key, name=name, subtitle=subtitle,
+        sky=sky, fog=fog, sun=sun, ambient=ambient,
+        start=Vec3(anchors.start), portal=Vec3(anchors.goal),
+        build=(lambda b, _r=route, _t=theme, _s=seed:
+               _r(Course(b, _t, seed=_s))),
+        gem_name=gem_name, gem_goal=gem_goal,
+        enemies=[Spawn(Vec3(p), kind) for kind, p in anchors.enemies],
+        gems=[Vec3(p) for p in anchors.gems],
+        hearts=[Vec3(p) for p in anchors.hearts],
+        checkpoints=[Vec3(p) for p in anchors.checkpoints],
+        course_length=anchors.length,
+        objectives=list(objectives),
+    )
+    lv.puzzles = [PuzzleSpec(kind=kind, pos=Vec3(p), **kw)
+                  for kind, p, kw in anchors.puzzles]
+    return lv
 
 
-# --- Melody (Musa) ---------------------------------------------------------
-def _build_melody(b: WorldBuilder, besieged: bool = False) -> None:
-    """The realm of music: a valley built as one enormous instrument."""
-    rng = random.Random(233)
-    stone = Vec4(0.86, 0.74, 0.70, 1)
-    lacquer = Vec4(0.80, 0.24, 0.28, 1)
-    gold = Vec4(0.92, 0.76, 0.36, 1)
-    jade = Vec4(0.42, 0.68, 0.60, 1)
-    if besieged:
-        stone = Vec4(0.56, 0.50, 0.48, 1)
-        lacquer = Vec4(0.46, 0.18, 0.20, 1)
-        gold = Vec4(0.58, 0.50, 0.30, 1)
-        jade = Vec4(0.30, 0.42, 0.38, 1)
-
-    b.mesh.grid_ground(190, 190, shade(stone, 0.86), shade(stone, 0.80),
-                       step=6.0, jitter=0.12, relief=0.08, seed=16)
-    b.clip((0, 0, -2.0), (230, 230, 4.0))
-    b.bounds(78, 78)
-
-    # Concentric amphitheatre steps down to a central stage.
-    for i, r in enumerate((40.0, 33.0, 26.0, 19.0)):
-        segs = 30
-        for k in range(segs):
-            a = math.tau * k / segs
-            x, y = math.cos(a) * r, math.sin(a) * r
-            if _in_approach(x, y, 10.0):
-                continue          # the entrance aisle down to the stage
-            b.solid((x, y, 0.7 + (3 - i) * 1.5),
-                    (7.0, 7.0, 1.4 + (3 - i) * 1.5),
-                    shade(stone, 0.88 + i * 0.05))
-    b.mesh.grid_ground(26, 26, shade(lacquer, 1.05), shade(lacquer, 0.94),
-                       step=3.25, center=(0, 0, 0.10), jitter=0.09, seed=17)
-
-    # Giant drums around the stage - solid, and you can stand on them.
-    for i in range(6):
-        a = math.tau * i / 6
-        x, y = math.cos(a) * 13.0, math.sin(a) * 13.0
-        h = rng.uniform(3.0, 5.0)
-        b.mesh.cylinder((x, y, 0), 2.6, 2.6, h, lacquer, segments=12,
-                        top_color=Vec4(0.94, 0.90, 0.82, 1))
-        for k in range(8):
-            ka = math.tau * k / 8
-            b.decor().sphere((x + math.cos(ka) * 2.6, y + math.sin(ka) * 2.6,
-                              h * 0.5), 0.28, gold, segments=6, rings=5)
-        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(2.6, 2.6, h * 0.5)))
-
-    # A harp frame at the back of the valley: strings you can fly between.
-    b.solid((0, 46, 14.0), (3.2, 3.2, 28.0), lacquer)
-    b.solid((-22, 46, 9.0), (3.2, 3.2, 18.0), lacquer)
-    b.solid((-11, 46, 27.0), (25, 3.0, 3.0), gold)
-    for k in range(10):
-        sx = -20.5 + k * 2.0
-        b.decor().cylinder((sx, 46, 1.0), 0.10, 0.10, 24.0 - k * 1.6,
-                           Vec4(0.95, 0.92, 0.80, 1), segments=4)
-    # ...and a rank of organ pipes along the east wall, clear of the aisle.
-    for k in range(12):
-        py = -13.0 + k * 2.4
-        h = 10.0 + abs(6 - k) * 2.2
-        b.solid((46, py, h * 0.5), (2.0, 2.0, h), shade(gold, 0.95))
-
-    # Pagoda pavilions on the ridge - Melody's architecture.
-    for i in range(5):
-        a = math.tau * i / 5 + 0.6
-        x, y = math.cos(a) * 58.0, math.sin(a) * 58.0
-        if _in_approach(x, y, 12.0):
-            continue
-        b.solid((x, y, 4.0), (14, 14, 8.0), stone, shade(stone, 1.06))
-        for k in range(3):
-            b.mesh.cylinder((x, y, 8.0 + k * 3.2), 11.0 - k * 2.6, 0.2,
-                            2.0, shade(lacquer, 0.95 + 0.08 * k), segments=4)
-        b.decor().cylinder((x, y, 17.0), 0.5, 0.0, 3.0, gold, segments=6)
-
-    # Floating gongs - the platforms for this level.
-    for i in range(6):
-        a = math.tau * i / 6 + 0.3
-        x, y = math.cos(a) * 30.0, math.sin(a) * 30.0
-        z = 11.0 + (i % 3) * 4.0
-        b.solid((x, y, z), (9, 9, 0.8), gold, shade(gold, 1.2))
-        b.decor().cylinder((x, y, z + 0.5), 3.2, 3.0, 0.4, shade(jade, 1.1),
-                           segments=14)
-    if besieged:
-        _blight(b, rng, 22, stone)
+def _obj_pack(flag_key, flag_text, clear_text, gem_goal, gem_text):
+    out = []
+    if flag_key:
+        out.append(obj_flag(flag_key, flag_text))
+    out.append(obj_clear(clear_text))
+    if gem_goal:
+        out.append(obj_collect(gem_goal, gem_text))
+    out.append(Objective("chests", "Open the chests along the way", "chests",
+                         required=False))
+    return out
 
 
-# --- Zenith (Tecna) --------------------------------------------------------
-def _build_zenith(b: WorldBuilder, besieged: bool = False) -> None:
-    """The technological realm: everything on a grid, nothing organic."""
-    rng = random.Random(241)
-    board = Vec4(0.13, 0.20, 0.24, 1)
-    board_b = Vec4(0.10, 0.16, 0.20, 1)
-    trace = Vec4(0.25, 0.90, 0.85, 1)
-    plate = Vec4(0.42, 0.48, 0.55, 1)
-    if besieged:
-        trace = Vec4(0.90, 0.45, 0.25, 1)     # every indicator gone to alarm
-        board = Vec4(0.18, 0.16, 0.16, 1)
-        board_b = Vec4(0.14, 0.12, 0.12, 1)
-
-    b.mesh.grid_ground(190, 190, board, board_b, step=4.0, jitter=0.19,
-                       seed=18)
-    b.clip((0, 0, -2.0), (230, 230, 4.0))
-    b.bounds(78, 78)
-
-    # Circuit traces etched across the floor.
-    for i in range(26):
-        if i % 2:
-            x = rng.uniform(-70, 70)
-            b.decor().box((x, 0, 0.10), (0.9, 150, 0.06), trace)
-            b.decor().sphere((x, rng.uniform(-60, 60), 0.30), 0.7, trace,
-                             segments=6, rings=5, squash=0.35)
-        else:
-            y = rng.uniform(-70, 70)
-            b.decor().box((0, y, 0.10), (150, 0.9, 0.06), trace)
-            b.decor().sphere((rng.uniform(-60, 60), y, 0.30), 0.7, trace,
-                             segments=6, rings=5, squash=0.35)
-
-    # The data core: stacked hexagonal drums at the centre.
-    for i, (r, h) in enumerate(((14.0, 2.0), (11.0, 2.0), (8.0, 2.0))):
-        b.mesh.cylinder((0, 0, i * 2.0), r, r * 0.92, h, plate, segments=6,
-                        top_color=shade(plate, 1.15))
-        b.boxes.append((Vec3(0, 0, i * 2.0 + h * 0.5), Vec3(r, r, h * 0.5)))
-    b.decor().cylinder((0, 0, 6.0), 5.0, 3.0, 14.0,
-                       Vec4(trace[0], trace[1], trace[2], 1), segments=6)
-    b.glass().cylinder((0, 0, 6.0), 7.0, 5.0, 16.0,
-                       Vec4(trace[0], trace[1], trace[2], 0.28), segments=10,
-                       cap_top=False, cap_bottom=False)
-
-    # Server towers on the grid, lit down one face.
-    for i in range(12):
-        a = math.tau * i / 12
-        r = 30.0 + (i % 3) * 9.0
-        x, y = math.cos(a) * r, math.sin(a) * r
-        if _in_approach(x, y, 10.0):
-            continue
-        h = rng.uniform(14.0, 30.0)
-        b.solid((x, y, h * 0.5), (7, 7, h), plate, shade(plate, 1.2))
-        for k in range(int(h // 3)):
-            b.decor().box((x, y - 3.6, 2.0 + k * 3.0), (4.2, 0.3, 0.9), trace)
-
-    # Floating hexagonal pads, arranged as a lattice to fly through.
-    for ring, (rr, zz) in enumerate(((20.0, 9.0), (30.0, 15.0), (40.0, 21.0))):
-        for i in range(6):
-            a = math.tau * i / 6 + ring * 0.5
-            x, y = math.cos(a) * rr, math.sin(a) * rr
-            b.solid((x, y, zz), (9, 9, 1.0), plate, trace)
-            b.decor().cylinder((x, y, zz - 0.6), 3.2, 2.6, -2.4,
-                               shade(plate, 0.8), segments=6)
-
-    # Antenna masts on the perimeter.
-    for i in range(8):
-        a = math.tau * i / 8 + 0.4
-        x, y = math.cos(a) * 62.0, math.sin(a) * 62.0
-        b.mesh.cylinder((x, y, 0), 0.9, 0.35, 26.0, plate, segments=6)
-        b.decor().sphere((x, y, 27.0), 1.2, trace, segments=7, rings=5)
-        b.boxes.append((Vec3(x, y, 13.0), Vec3(1.0, 1.0, 13.0)))
-    if besieged:
-        _blight(b, rng, 22, plate)
+SKIES = {
+    "gardenia": (Vec4(0.56, 0.78, 0.95, 1), Vec4(0.76, 0.87, 0.97, 1),
+                 Vec4(1.0, 0.98, 0.92, 1), Vec4(0.58, 0.60, 0.66, 1)),
+    "alfea": (Vec4(0.53, 0.76, 0.96, 1), Vec4(0.72, 0.85, 0.97, 1),
+              Vec4(1.0, 0.97, 0.88, 1), Vec4(0.55, 0.57, 0.66, 1)),
+    "swamp": (Vec4(0.30, 0.34, 0.28, 1), Vec4(0.34, 0.38, 0.30, 1),
+              Vec4(0.86, 0.90, 0.76, 1), Vec4(0.42, 0.46, 0.40, 1)),
+    "cloudtower": (Vec4(0.15, 0.11, 0.22, 1), Vec4(0.22, 0.17, 0.32, 1),
+                   Vec4(0.80, 0.72, 1.0, 1), Vec4(0.40, 0.36, 0.52, 1)),
+    "roccaluce": (Vec4(0.62, 0.72, 0.86, 1), Vec4(0.80, 0.87, 0.95, 1),
+                  Vec4(0.92, 0.95, 1.0, 1), Vec4(0.60, 0.64, 0.74, 1)),
+    "redfountain": (Vec4(0.42, 0.34, 0.44, 1), Vec4(0.56, 0.44, 0.46, 1),
+                    Vec4(1.0, 0.86, 0.70, 1), Vec4(0.52, 0.46, 0.50, 1)),
+    "pixievillage": (Vec4(0.60, 0.82, 0.92, 1), Vec4(0.78, 0.90, 0.90, 1),
+                     Vec4(1.0, 0.98, 0.86, 1), Vec4(0.60, 0.62, 0.62, 1)),
+    "solaria": (Vec4(0.42, 0.68, 0.95, 1), Vec4(0.86, 0.90, 0.98, 1),
+                Vec4(1.0, 0.98, 0.88, 1), Vec4(0.66, 0.66, 0.68, 1)),
+    "lynphea": (Vec4(0.52, 0.76, 0.86, 1), Vec4(0.74, 0.88, 0.84, 1),
+                Vec4(1.0, 0.98, 0.86, 1), Vec4(0.58, 0.62, 0.58, 1)),
+    "melody": (Vec4(0.86, 0.60, 0.58, 1), Vec4(0.92, 0.78, 0.72, 1),
+               Vec4(1.0, 0.92, 0.82, 1), Vec4(0.62, 0.56, 0.56, 1)),
+    "zenith": (Vec4(0.10, 0.16, 0.22, 1), Vec4(0.16, 0.26, 0.32, 1),
+               Vec4(0.80, 0.94, 1.0, 1), Vec4(0.44, 0.52, 0.56, 1)),
+    "andros": (Vec4(0.36, 0.66, 0.86, 1), Vec4(0.66, 0.84, 0.92, 1),
+               Vec4(1.0, 0.98, 0.92, 1), Vec4(0.58, 0.64, 0.68, 1)),
+}
+DARK_SKY = (Vec4(0.20, 0.14, 0.18, 1), Vec4(0.32, 0.22, 0.24, 1),
+            Vec4(1.0, 0.70, 0.58, 1), Vec4(0.44, 0.36, 0.40, 1))
 
 
-# --- Andros (Aisha) --------------------------------------------------------
-def _build_andros(b: WorldBuilder, besieged: bool = False) -> None:
-    """An ocean realm: causeways and coral over open water."""
-    rng = random.Random(251)
-    sea = Vec4(0.16, 0.42, 0.58, 1)
-    sea_b = Vec4(0.13, 0.36, 0.52, 1)
-    coral = [Vec4(0.95, 0.48, 0.55, 1), Vec4(0.98, 0.68, 0.35, 1),
-             Vec4(0.55, 0.85, 0.80, 1), Vec4(0.72, 0.55, 0.92, 1)]
-    stone = Vec4(0.74, 0.78, 0.78, 1)
-    if besieged:
-        sea = Vec4(0.18, 0.26, 0.30, 1)
-        sea_b = Vec4(0.14, 0.22, 0.26, 1)
-        coral = [shade(c, 0.45) for c in coral]
-        stone = Vec4(0.52, 0.52, 0.50, 1)
+# --- The eight shared chapters --------------------------------------------
+LEVEL_ALFEA = course_level(
+    "alfea", "Alfea College", "Magix. Your first field exercise.",
+    THEMES["alfea"], route_alfea, *SKIES["alfea"],
+    gem_name="magic crystal", gem_goal=14, seed=11,
+    objectives=_obj_pack("barrier", "Wake the four barrier stones",
+                         "Drive the ghouls out of the courtyard",
+                         14, "Gather the loose magic crystals"))
 
-    # The sea is the floor: solid enough to stand on, visually translucent.
-    b.mesh.grid_ground(200, 200, sea, sea_b, step=6.5, jitter=0.14,
-                       relief=0.15, seed=19)
-    b.clip((0, 0, -2.0), (240, 240, 4.0))
-    b.bounds(82, 82)
-    b.glass().grid_ground(200, 200, Vec4(0.30, 0.62, 0.82, 0.42),
-                          Vec4(0.24, 0.55, 0.78, 0.42), step=13.0,
-                          center=(0, 0, 0.45))
+LEVEL_SWAMP = course_level(
+    "swamp", "Black Mud Swamp", "Knut's hideout. And its landlords.",
+    THEMES["swamp"], route_swamp, *SKIES["swamp"],
+    gem_name="swamp crystal", gem_goal=12, seed=13,
+    objectives=_obj_pack("marshlights", "Light the marsh lights",
+                         "Clear Knut's hideout",
+                         12, "Gather the swamp crystals"))
 
-    # The island city: a ringed platform reached by four causeways.
-    for i, r in enumerate((22.0, 17.0, 12.0)):
-        b.solid((0, 0, 0.8 + i * 1.5), (r * 2, r * 2, 1.5),
-                shade(stone, 0.94 + i * 0.05))
-    for i in range(4):
-        a = math.tau * i / 4
-        for k in range(9):
-            rr = 24.0 + k * 5.0
-            b.solid((math.cos(a) * rr, math.sin(a) * rr, 0.8),
-                    (7.0, 7.0, 1.4), shade(stone, 0.90))
-    # Domed halls on the island.
-    for i in range(5):
-        a = math.tau * i / 5 + 0.3
-        x, y = math.cos(a) * 8.0, math.sin(a) * 8.0
-        b.mesh.cylinder((x, y, 4.3), 3.2, 3.0, 4.5, stone, segments=10)
-        b.mesh.sphere((x, y, 9.2), 3.3, shade(Vec4(0.40, 0.72, 0.85, 1), 1.0),
-                      segments=11, rings=7, squash=0.72)
-        b.boxes.append((Vec3(x, y, 6.5), Vec3(3.2, 3.2, 3.0)))
+LEVEL_CLOUDTOWER = course_level(
+    "cloudtower", "Cloud Tower", "The corridors move. The Book of Fate does not.",
+    THEMES["cloudtower"], route_cloudtower, *SKIES["cloudtower"],
+    gem_name="page", gem_goal=12, seed=17,
+    objectives=_obj_pack("verse", "Sound the four chimes in the verse's order",
+                         "Deal with what the noise brings",
+                         12, "Recover the loose pages"))
 
-    # Coral towers rising out of the water - cover and platforms.
-    for i in range(20):
-        a = math.tau * i / 20 + rng.uniform(-0.12, 0.12)
-        r = rng.uniform(30, 68)
-        x, y = math.cos(a) * r, math.sin(a) * r
-        if _in_approach(x, y, 10.0):
-            continue
-        h = rng.uniform(6.0, 20.0)
-        col = coral[i % len(coral)]
-        b.mesh.cylinder((x, y, 0), 3.0, 1.8, h, col, segments=9)
-        b.boxes.append((Vec3(x, y, h * 0.5), Vec3(2.6, 2.6, h * 0.5)))
-        for k in range(rng.randint(2, 4)):
-            ka = rng.uniform(0, math.tau)
-            bz = h * rng.uniform(0.45, 0.9)
-            b.mesh.cylinder((x + math.cos(ka) * 1.4, y + math.sin(ka) * 1.4, bz),
-                            1.2, 0.4, rng.uniform(2.5, 5.0), shade(col, 1.12),
-                            segments=7)
-        if h > 11.0:
-            b.solid((x, y, h), (7, 7, 0.9), shade(col, 1.2),
-                    Vec4(0.85, 0.95, 0.95, 1))
+LEVEL_ROCCALUCE = course_level(
+    "roccaluce", "Lake Roccaluce", "Daphne is waiting. So is Icy.",
+    THEMES["roccaluce"], route_roccaluce, *SKIES["roccaluce"],
+    gem_name="frozen tear", gem_goal=13, seed=19,
+    objectives=_obj_pack("lights", "Wake the four lights above the lake",
+                         "Hold the ice against Icy",
+                         13, "Gather the frozen tears"))
 
-    # Standing waves, frozen mid-curl - Aisha's element, made into terrain.
-    for i in range(9):
-        a = math.tau * i / 9 + 0.25
-        x, y = math.cos(a) * 46.0, math.sin(a) * 46.0
-        for k in range(4):
-            b.glass().sphere((x + k * 1.2, y, 1.0 + k * 1.6),
-                             4.2 - k * 0.7,
-                             Vec4(0.45, 0.80, 0.95, 0.45), segments=9, rings=6,
-                             squash=0.55)
-    if besieged:
-        _blight(b, rng, 20, stone, radius=(24, 66))
+LEVEL_REDFOUNTAIN = course_level(
+    "redfountain", "Red Fountain",
+    "School of Heroics and Bravery. Under attack.",
+    THEMES["redfountain"], route_redfountain, *SKIES["redfountain"],
+    gem_name="codex shard", gem_goal=12, seed=23,
+    objectives=_obj_pack("vault", "Push both counterweights onto the plates",
+                         "Hold Red Fountain",
+                         12, "Secure the loose Codex shards"))
 
+LEVEL_PIXIEVILLAGE = course_level(
+    "pixievillage", "Pixie Village", "The last piece of the Codex.",
+    THEMES["pixievillage"], route_pixievillage, *SKIES["pixievillage"],
+    gem_name="pixie", gem_goal=14, seed=29,
+    objectives=_obj_pack("rhyme", "Wake the chimes in the rhyme's order",
+                         "Get the pixies clear",
+                         14, "Carry the pixies to safety"))
 
-# --- Home-realm level definitions ------------------------------------------
-def _home(key, name, subtitle, builder, sky, fog, sun, ambient, start, portal,
-          gem_name, gems, hearts, enemies, gem_goal, besieged=False) -> Level:
-    return Level(key=key, name=name, subtitle=subtitle,
-                 sky=sky, fog=fog, sun=sun, ambient=ambient,
-                 start=start, portal=portal,
-                 build=(lambda b, _f=builder: _f(b, besieged)),
-                 gem_name=gem_name, gems=gems, hearts=hearts,
-                 enemies=enemies, gem_goal=gem_goal)
+LEVEL_SIEGE_CLOUDTOWER = course_level(
+    "siege_cloudtower", "Cloud Tower Has Fallen",
+    "The Army of Decay holds the school.",
+    _darken(THEMES["cloudtower"]),
+    lambda c: _home_route(c, _lm_spire, "Griffin's Order",
+                          "Nailed to the dormitory door, in a hurry:\n\n"
+                          "  'Every witch to her room and the door held "
+                          "shut. Whatever is in the corridors is not a "
+                          "student and it is not alive. - G.'",
+                          "icy", mob="decay", besieged=True),
+    *DARK_SKY, gem_name="page", seed=31,
+    objectives=_obj_pack(None, None, "Cut through the Army of Decay", 0, None))
+
+LEVEL_BATTLE_ALFEA = course_level(
+    "battle_alfea", "The Battle of Alfea",
+    "All three of them. Every student in the courtyard.",
+    _darken(THEMES["alfea"]),
+    lambda c: _home_route(c, _lm_school, "Faragonda's Last Order",
+                          "Chalked on the courtyard flags, in a hand that "
+                          "did not have time to be neat:\n\n"
+                          "  'Every student to the courtyard. Nobody fights "
+                          "alone today.'",
+                          "icy", mob="decay", besieged=True),
+    *DARK_SKY, gem_name="crystal", seed=37,
+    objectives=_obj_pack(None, None, "Hold the courtyard, then finish the Trix",
+                         0, None))
+
+# The finale fields all three sisters.
+LEVEL_BATTLE_ALFEA.enemies += [Spawn(LEVEL_BATTLE_ALFEA.portal +
+                                     Vec3(-16, -26, 10), "darcy"),
+                               Spawn(LEVEL_BATTLE_ALFEA.portal +
+                                     Vec3(16, -26, 10), "stormy")]
 
 
-# Peacetime enemy sets are light: these chapters introduce a realm.  The
-# besieged versions field the Army of Decay and a Trix.
-def _home_pair(fairy, name, builder, gem_name, palette, layout, boss) -> tuple:
-    sky, fog, sun, amb = palette["calm"]
-    dsky, dfog, dsun, damb = palette["dark"]
-    start, portal, gems, hearts = layout
-    calm = _home(
-        "home_" + fairy, name, palette["sub_calm"], builder,
-        sky, fog, sun, amb, start, portal, gem_name, gems, hearts,
-        enemies=[Spawn(Vec3(0, 10, 3), "knut")] +
-                [Spawn(p, "ghoul") for p in palette["mobs"]],
-        gem_goal=min(4, len(gems)))
-    siege = _home(
-        "siege_" + fairy, name, palette["sub_dark"], builder,
-        dsky, dfog, dsun, damb, start, portal, gem_name, gems, hearts,
-        enemies=[Spawn(Vec3(0, 14, 11), boss)] +
-                [Spawn(p, "decay") for p in palette["mobs"][:4]] +
-                [Spawn(p, "ghoul") for p in palette["mobs"][4:]],
-        gem_goal=0, besieged=True)
-    return calm, siege
-
-
-_MOBS_WIDE = [Vec3(-18, 4, 3), Vec3(18, 4, 3), Vec3(-12, 24, 3),
-              Vec3(12, 24, 3), Vec3(0, 32, 3), Vec3(-28, -14, 3),
-              Vec3(28, -14, 3)]
+# --- The six home realms, calm and besieged -------------------------------
+_HOME_SPEC = {
+    #          theme key      landmark        boss     mob       gem name
+    "bloom":  ("gardenia",    _lm_bandstand,  "knut",  "ghoul", "spark"),
+    "stella": ("solaria",     _lm_sunpalace,  "knut",  "ghoul", "sunstone"),
+    "flora":  ("lynphea",     _lm_greattree,  "knut",  "ghoul", "seed"),
+    "musa":   ("melody",      _lm_harp,       "knut",  "ghoul", "note"),
+    "tecna":  ("zenith",      _lm_core,       "knut",  "ghoul", "data node"),
+    "aisha":  ("andros",      _lm_dome,       "knut",  "ghoul", "pearl"),
+}
+_HOME_LORE = {
+    "bloom": ("A Note on the Fridge",
+              "  'Bloom - gone to the shop, back by six. There is a "
+              "casserole. Do NOT let Kiko into the greenhouse again. Love, "
+              "Mum.'\n\nSixteen years of a life that was never quite the "
+              "whole story."),
+    "stella": ("The Ring's Inventory",
+               "Carved above the treasury door:\n\n  'The Ring of Solaria "
+               "answers to the blood of Solaria and to nothing else. Whoever "
+               "takes it will find they have stolen a very heavy piece of "
+               "jewellery and nothing more.'"),
+    "flora": ("The Grove's Own Record",
+              "Grown into the bark, letter by letter, over centuries:\n\n"
+              "  'What is planted here is not owned here. Take a seed, leave "
+              "a seed. Anyone who takes without leaving will be shown the "
+              "way out by the roots themselves.'"),
+    "musa": ("The Valley's First Score",
+             "Cut into the stage where the valley's first piece was "
+             "played:\n\n  'Melody is not the sound. Melody is the silence "
+             "you put it into. Guard both.'"),
+    "tecna": ("Realm Log, Entry 44,912",
+              "  'Anomaly logged: an unregistered mass crossed the perimeter "
+              "at 03:14 and was not detected by any of nine independent "
+              "systems. Probability of simultaneous failure: 1 in 4.1 "
+              "billion. Conclusion: this was not a failure.'"),
+    "aisha": ("The Tide Tables",
+              "Set into the causeway, worn almost smooth:\n\n  'Andros keeps "
+              "no walls. The sea is the wall. When the sea stops answering, "
+              "that is when you should be afraid.'"),
+}
+_SIEGE_BOSS = {"bloom": "stormy", "stella": "stormy", "flora": "darcy",
+               "musa": "icy", "tecna": "darcy", "aisha": "icy"}
 
 HOME_LEVELS = {}
-
-# Bloom - Gardenia Park, Earth (already built above as chapter 1's setting)
-HOME_LEVELS["bloom"] = (
-    _home("home_bloom", "Gardenia Park", "Earth. No magic here. Usually.",
-          _build_gardenia,
-          Vec4(0.56, 0.78, 0.95, 1), Vec4(0.76, 0.87, 0.97, 1),
-          Vec4(1.0, 0.98, 0.92, 1), Vec4(0.58, 0.60, 0.66, 1),
-          Vec3(0, -40, 2.0), Vec3(0, 40, 1.2), "spark",
-          [Vec3(-22, -22, 1.4), Vec3(22, -22, 1.4), Vec3(0, 0, 2.6),
-           Vec3(34, 34, 1.6)],
-          [Vec3(-34, 0, 1.4), Vec3(34, 0, 1.4)],
-          [Spawn(Vec3(0, 8, 2), "knut"),
-           Spawn(Vec3(-16, 2, 2), "ghoul"), Spawn(Vec3(16, 2, 2), "ghoul"),
-           Spawn(Vec3(-10, 20, 2), "ghoul"), Spawn(Vec3(10, 20, 2), "ghoul"),
-           Spawn(Vec3(0, 30, 2), "ghoul")], 0),
-    _home("siege_bloom", "Gardenia Park", "They followed you home.",
-          _build_gardenia,
-          Vec4(0.20, 0.14, 0.18, 1), Vec4(0.32, 0.22, 0.24, 1),
-          Vec4(1.0, 0.70, 0.58, 1), Vec4(0.44, 0.36, 0.40, 1),
-          Vec3(0, -40, 2.0), Vec3(0, 40, 1.2), "spark",
-          [Vec3(-22, -22, 1.4), Vec3(22, -22, 1.4), Vec3(0, 0, 2.6)],
-          [Vec3(-34, 0, 1.4), Vec3(34, 0, 1.4)],
-          [Spawn(Vec3(0, 14, 11), "stormy"),
-           Spawn(Vec3(-18, 4, 2), "decay"), Spawn(Vec3(18, 4, 2), "decay"),
-           Spawn(Vec3(-12, 24, 2), "decay"), Spawn(Vec3(12, 24, 2), "decay"),
-           Spawn(Vec3(0, 32, 2), "ghoul"), Spawn(Vec3(-28, -14, 2), "ghoul"),
-           Spawn(Vec3(28, -14, 2), "ghoul")], 0, besieged=True),
-)
-
-HOME_LEVELS["stella"] = _home_pair(
-    "stella", "Solaria", _build_solaria, "sunstone",
-    {"calm": (Vec4(0.42, 0.68, 0.95, 1), Vec4(0.86, 0.90, 0.98, 1),
-              Vec4(1.0, 0.98, 0.88, 1), Vec4(0.66, 0.66, 0.68, 1)),
-     "dark": (Vec4(0.26, 0.18, 0.22, 1), Vec4(0.40, 0.28, 0.26, 1),
-              Vec4(1.0, 0.74, 0.58, 1), Vec4(0.46, 0.40, 0.42, 1)),
-     "sub_calm": "The Sun Palace. Home, and she is late again.",
-     "sub_dark": "They put out the sun.",
-     "mobs": _MOBS_WIDE},
-    layout=(Vec3(0, -46, 2.0), Vec3(0, 30, 1.4),
-            [Vec3(-19.0, 11.0, 15.0), Vec3(19.0, 11.0, 19.0),
-             Vec3(-19.0, -11.0, 19.0), Vec3(19.0, -11.0, 15.0),
-             Vec3(0, 22, 15.0), Vec3(0, -22, 19.0)],
-            [Vec3(-30, -30, 1.6), Vec3(30, -30, 1.6)]),
-    boss="stormy")
-
-HOME_LEVELS["flora"] = _home_pair(
-    "flora", "Lynphea", _build_lynphea, "seed",
-    {"calm": (Vec4(0.52, 0.76, 0.86, 1), Vec4(0.74, 0.88, 0.84, 1),
-              Vec4(1.0, 0.98, 0.86, 1), Vec4(0.58, 0.62, 0.58, 1)),
-     "dark": (Vec4(0.20, 0.20, 0.14, 1), Vec4(0.30, 0.30, 0.20, 1),
-              Vec4(0.92, 0.86, 0.60, 1), Vec4(0.42, 0.42, 0.34, 1)),
-     "sub_calm": "Everything here grew past its own scale.",
-     "sub_dark": "The Army of Decay is in the grove.",
-     "mobs": _MOBS_WIDE},
-    layout=(Vec3(0, -50, 2.0), Vec3(0, 0, 18.4),
-            [Vec3(-30.0, 12.0, 13.0), Vec3(30.0, 12.0, 17.0),
-             Vec3(-24.0, -30.0, 11.0), Vec3(24.0, -30.0, 15.0),
-             Vec3(0, 36, 13.0), Vec3(0, -36, 11.0)],
-            [Vec3(-40, -40, 1.6), Vec3(40, -40, 1.6)]),
-    boss="darcy")
-
-HOME_LEVELS["musa"] = _home_pair(
-    "musa", "Melody", _build_melody, "note",
-    {"calm": (Vec4(0.86, 0.60, 0.58, 1), Vec4(0.92, 0.78, 0.72, 1),
-              Vec4(1.0, 0.92, 0.82, 1), Vec4(0.62, 0.56, 0.56, 1)),
-     "dark": (Vec4(0.22, 0.14, 0.18, 1), Vec4(0.34, 0.22, 0.26, 1),
-              Vec4(0.96, 0.70, 0.70, 1), Vec4(0.44, 0.36, 0.40, 1)),
-     "sub_calm": "The whole valley is built to be played.",
-     "sub_dark": "Every string in the valley has been cut.",
-     "mobs": _MOBS_WIDE},
-    layout=(Vec3(0, -52, 2.0), Vec3(0, 0, 1.0),
-            [Vec3(-30.0, 0.0, 13.0), Vec3(15.0, 26.0, 17.0),
-             Vec3(-15.0, 26.0, 13.0), Vec3(15.0, -26.0, 15.0),
-             Vec3(-15.0, -26.0, 19.0), Vec3(30.0, 0.0, 15.0)],
-            [Vec3(-44, -20, 6.0), Vec3(44, -20, 6.0)]),
-    boss="icy")
-
-HOME_LEVELS["tecna"] = _home_pair(
-    "tecna", "Zenith", _build_zenith, "data node",
-    {"calm": (Vec4(0.10, 0.16, 0.22, 1), Vec4(0.16, 0.26, 0.32, 1),
-              Vec4(0.80, 0.94, 1.0, 1), Vec4(0.44, 0.52, 0.56, 1)),
-     "dark": (Vec4(0.20, 0.11, 0.09, 1), Vec4(0.30, 0.18, 0.14, 1),
-              Vec4(1.0, 0.76, 0.60, 1), Vec4(0.46, 0.38, 0.36, 1)),
-     "sub_calm": "Zenith. Everything measured, everything on a grid.",
-     "sub_dark": "Every system in the realm is reading red.",
-     "mobs": _MOBS_WIDE},
-    layout=(Vec3(0, -50, 2.0), Vec3(0, 0, 7.0),
-            [Vec3(20.0, 0.0, 10.5), Vec3(-10.0, 17.3, 10.5),
-             Vec3(-10.0, -17.3, 10.5), Vec3(0.0, 30.0, 16.5),
-             Vec3(-26.0, -15.0, 16.5), Vec3(26.0, -15.0, 16.5)],
-            [Vec3(-40, -40, 1.6), Vec3(40, -40, 1.6)]),
-    boss="darcy")
-
-HOME_LEVELS["aisha"] = _home_pair(
-    "aisha", "Andros", _build_andros, "pearl",
-    {"calm": (Vec4(0.36, 0.66, 0.86, 1), Vec4(0.66, 0.84, 0.92, 1),
-              Vec4(1.0, 0.98, 0.92, 1), Vec4(0.58, 0.64, 0.68, 1)),
-     "dark": (Vec4(0.14, 0.18, 0.24, 1), Vec4(0.22, 0.28, 0.32, 1),
-              Vec4(0.82, 0.88, 1.0, 1), Vec4(0.40, 0.44, 0.48, 1)),
-     "sub_calm": "Andros. Nine tenths of it is water.",
-     "sub_dark": "Something has poisoned the sea.",
-     "mobs": _MOBS_WIDE},
-    layout=(Vec3(0, -56, 2.0), Vec3(0, 0, 5.2),
-            [Vec3(-44.0, 12.0, 13.0), Vec3(44.0, 12.0, 13.0),
-             Vec3(-30.0, -38.0, 13.0), Vec3(30.0, -38.0, 13.0),
-             Vec3(0.0, 48.0, 13.0), Vec3(0, 0, 6.0)],
-            [Vec3(-36, 36, 2.4), Vec3(36, 36, 2.4)]),
-    boss="icy")
+for _i, (_key, (_tk, _lm, _boss, _mob, _gem)) in enumerate(_HOME_SPEC.items()):
+    _title, _text = _HOME_LORE[_key]
+    _realm_name = {"gardenia": "Gardenia Park", "solaria": "Solaria",
+                   "lynphea": "Lynphea", "melody": "Melody",
+                   "zenith": "Zenith", "andros": "Andros"}[_tk]
+    _calm_route = (route_gardenia if _key == "bloom" else
+                   (lambda c, _l=_lm, _t=_title, _x=_text, _b=_boss, _m=_mob:
+                    _home_route(c, _l, _t, _x, _b, _m)))
+    _calm = course_level(
+        "home_" + _key, _realm_name,
+        {"bloom": "Earth. No magic here. Usually."}.get(
+            _key, "Home, and something has followed you to it."),
+        THEMES[_tk], _calm_route, *SKIES[_tk],
+        gem_name=_gem, gem_goal=12, seed=101 + _i * 7,
+        objectives=_obj_pack("realmlights", "Wake the realm lights",
+                             "Drive them off your own doorstep",
+                             12, "Gather what was scattered"))
+    _siege = course_level(
+        "siege_" + _key, _realm_name, "They followed you home.",
+        _darken(THEMES[_tk]),
+        (lambda c, _l=_lm, _t=_title, _x=_text, _b=_SIEGE_BOSS[_key]:
+         _home_route(c, _l, _t, _x, _b, "decay", besieged=True)),
+        *DARK_SKY, gem_name=_gem, seed=211 + _i * 7,
+        objectives=_obj_pack(None, None, "Break the siege", 0, None))
+    HOME_LEVELS[_key] = (_calm, _siege)
 
 
 # ---------------------------------------------------------------------------
 # The campaign
 # ---------------------------------------------------------------------------
-# "home" and "siege" are filled in from the chosen fairy's realm; everything
-# else is the shared Season 1 arc.
 CAMPAIGN_TEMPLATE = ["home", "alfea", "swamp", "cloudtower", "roccaluce",
                      "redfountain", "pixievillage", "siege",
                      "siege_cloudtower", "battle_alfea"]
@@ -1647,267 +1136,25 @@ def campaign_for(fairy_key: str) -> list:
 
 
 # ---------------------------------------------------------------------------
-# Puzzles and exploration
-# ---------------------------------------------------------------------------
-def _explore_pack(tablet_pos, title, text, cache_a, cache_b,
-                  rune_positions=(), group="", color=None) -> list:
-    """The standard kit: one inscription, two hidden caches, some runes."""
-    out = [PuzzleSpec("tablet", Vec3(*tablet_pos), title=title, text=text),
-           PuzzleSpec("cache", Vec3(*cache_a), reward="health"),
-           PuzzleSpec("cache", Vec3(*cache_b), reward="magic")]
-    out += [PuzzleSpec("rune", Vec3(*p), group=group, color=color)
-            for p in rune_positions]
-    return out
-
-
-# --- Chapter 2, Alfea: light the barrier runes ------------------------------
-LEVEL_ALFEA.puzzles = _explore_pack(
-    (7, -18, 0.08), "The Barrier Stones",
-    "Four stones carry Alfea's barrier. When the school is threatened they "
-    "go dark, and only a fairy's magic will wake them. Strike each one - "
-    "the barrier will do the rest.",
-    (-38, 8, 6.75), (38, 8, 9.75),
-    rune_positions=((-20, -20, 0.08), (20, -20, 0.08),
-                    (-20, 20, 0.08), (20, 20, 0.08)),
-    group="barrier", color=Vec4(0.55, 0.85, 1.0, 1))
-LEVEL_ALFEA.objectives = [
-    obj_flag("barrier", "Wake the four barrier stones"),
-    obj_clear("Drive the ghouls out of the courtyard"),
-    obj_collect(5, "Gather the loose magic crystals"),
-    obj_secrets(),
-]
-
-# --- Chapter 3, Swamp: two levers extend the bridge to the islet ------------
-LEVEL_SWAMP.puzzles = _explore_pack(
-    (9, -20, 0.35), "Knut's Tally",
-    "Scratched into the post beside the hut: a count of deliveries, and "
-    "three marks that are not a count at all. Someone was paying him, and "
-    "paying him well.",
-    (28, 0, 3.55), (-44, -40, 5.35),
-    rune_positions=((-32, -30, 3.95), (36, -34, 3.95), (30, 30, 3.15),
-                    (-28, 34, 3.55)),
-    group="marshlights", color=Vec4(0.55, 0.95, 0.55, 1))
-LEVEL_SWAMP.puzzles += [
-    PuzzleSpec("lever", Vec3(-3.5, 3.5, 3.45), group="span"),
-    PuzzleSpec("lever", Vec3(3.5, 3.5, 3.45), group="span"),
-    PuzzleSpec("bridge", Vec3(14.5, 0, 3.2), group="span",
-               size=(19.0, 5.0, 0.8), travel=(-19.0, 0.0, -7.0)),
-]
-LEVEL_SWAMP.objectives = [
-    obj_clear("Clear Knut's hideout"),
-    obj_flag("marshlights", "Light the marsh lights out in the bog"),
-    obj_flag("span", "Work both levers to extend the bridge"),
-    obj_secrets(),
-]
-
-# --- Chapter 4, Cloud Tower: sound the sequence from the Book of Fate -------
-_CT_ORDER = ("dusk", "storm", "silence", "dawn")
-LEVEL_CLOUDTOWER.puzzles = _explore_pack(
-    (9, -26, 0.08), "A Page of the Book of Fate",
-    "The lock on the inner hall answers to a verse, not a key:\n\n"
-    "  'First dusk, and then the storm;\n"
-    "   after the storm, silence;\n"
-    "   and only then, the dawn.'\n\n"
-    "Sound the four chimes in that order. Sound them wrongly and the hall "
-    "will forget you were ever here.",
-    (-30, 30, 12.75), (30, -30, 12.75))
-LEVEL_CLOUDTOWER.puzzles += [
-    PuzzleSpec("pedestal", Vec3(-9, -9, 4.2), group="verse", order=0,
-               color=Vec4(0.85, 0.45, 0.35, 1)),      # dusk
-    PuzzleSpec("pedestal", Vec3(9, -9, 4.2), group="verse", order=1,
-               color=Vec4(0.60, 0.55, 0.95, 1)),      # storm
-    PuzzleSpec("pedestal", Vec3(9, 9, 4.2), group="verse", order=2,
-               color=Vec4(0.45, 0.45, 0.55, 1)),      # silence
-    PuzzleSpec("pedestal", Vec3(-9, 9, 4.2), group="verse", order=3,
-               color=Vec4(1.0, 0.88, 0.50, 1)),       # dawn
-    PuzzleSpec("gate", Vec3(0, 19.0, 0.0), group="verse",
-               size=(8.0, 1.8, 10.0)),
-]
-LEVEL_CLOUDTOWER.objectives = [
-    obj_flag("verse", "Sound the four chimes in the verse's order"),
-    obj_clear("Deal with what the noise brings"),
-    obj_collect(4, "Recover the loose pages"),
-    obj_secrets(),
-]
-
-# --- Chapter 5, Roccaluce: the lake's four frozen lights -------------------
-LEVEL_ROCCALUCE.puzzles = _explore_pack(
-    (9, -34, 0.08), "Daphne's Marker",
-    "Set at the lake's edge, in a hand that has not written anything for "
-    "sixteen years:\n\n"
-    "  'Four lights stood over Domino the night it fell. Wake them and I "
-    "will hear you, wherever I am now.'",
-    (-38, -30, 7.65), (0, 42, 9.65),
-    rune_positions=((-26, -22, 4.65), (26, -22, 4.65),
-                    (-30, 28, 6.65), (30, 28, 6.65)),
-    group="lights", color=Vec4(0.95, 0.92, 0.72, 1))
-LEVEL_ROCCALUCE.objectives = [
-    obj_flag("lights", "Wake the four lights above the lake"),
-    obj_clear("Hold the ice against Icy"),
-    obj_collect(4, "Gather the frozen tears"),
-    obj_secrets(),
-]
-
-# --- Chapter 6, Red Fountain: weigh down the vault plates ------------------
-LEVEL_REDFOUNTAIN.puzzles = _explore_pack(
-    (9, -26, 0.08), "Vault Protocol",
-    "Posted beside the arena, in Codatorta's handwriting:\n\n"
-    "  'The vault does not open to magic - that is the point of it. Two "
-    "counterweights onto the two floor plates, and it opens to anyone "
-    "strong enough to push them.'",
-    (-40, 0, 7.05), (40, 0, 7.05))
-LEVEL_REDFOUNTAIN.puzzles += [
-    PuzzleSpec("plate", Vec3(-9, 8, 0.08), group="vault"),
-    PuzzleSpec("plate", Vec3(9, 8, 0.08), group="vault"),
-    PuzzleSpec("block", Vec3(-9, -7, 0.08), size=(4.0, 4.0, 4.0)),
-    PuzzleSpec("block", Vec3(9, -7, 0.08), size=(4.0, 4.0, 4.0)),
-    PuzzleSpec("gate", Vec3(0, 30.0, 0.0), group="vault",
-               size=(11.0, 2.0, 9.0), color=Vec4(0.66, 0.40, 0.34, 1)),
-]
-LEVEL_REDFOUNTAIN.objectives = [
-    obj_flag("vault", "Push both counterweights onto the vault plates"),
-    obj_clear("Hold Red Fountain"),
-    obj_collect(4, "Secure the loose Codex shards"),
-    obj_secrets(),
-]
-
-# --- Chapter 7, Pixie Village: the chime ring ------------------------------
-LEVEL_PIXIEVILLAGE.puzzles = _explore_pack(
-    (9, -30, 0.08), "The Pixies' Rhyme",
-    "Painted around the base of the great tree, small enough that you have "
-    "to kneel:\n\n"
-    "  'Green wakes, then blue,\n"
-    "   gold after, red too,\n"
-    "   and violet last of all -\n"
-    "   then the roots let you through.'",
-    (-34, -30, 1.75), (34, -30, 1.75))
-LEVEL_PIXIEVILLAGE.puzzles += [
-    PuzzleSpec("pedestal", Vec3(0, -13, 1.0), group="rhyme", order=0,
-               color=Vec4(0.45, 0.92, 0.45, 1)),      # green
-    PuzzleSpec("pedestal", Vec3(-12.4, -4.0, 1.0), group="rhyme", order=1,
-               color=Vec4(0.40, 0.70, 1.00, 1)),      # blue
-    PuzzleSpec("pedestal", Vec3(-7.6, 10.5, 1.0), group="rhyme", order=2,
-               color=Vec4(1.00, 0.85, 0.35, 1)),      # gold
-    PuzzleSpec("pedestal", Vec3(7.6, 10.5, 1.0), group="rhyme", order=3,
-               color=Vec4(0.95, 0.35, 0.40, 1)),      # red
-    PuzzleSpec("pedestal", Vec3(12.4, -4.0, 1.0), group="rhyme", order=4,
-               color=Vec4(0.72, 0.45, 0.95, 1)),      # violet
-]
-LEVEL_PIXIEVILLAGE.objectives = [
-    obj_flag("rhyme", "Wake the chimes in the rhyme's order"),
-    obj_clear("Get the pixies clear"),
-    obj_collect(5, "Carry the pixies to safety"),
-    obj_secrets(),
-]
-
-# --- Chapters 9 and 10: no puzzles, these are the running battles ----------
-LEVEL_SIEGE_CLOUDTOWER.objectives = [
-    obj_clear("Cut through the Army of Decay"),
-    obj_secrets(),
-]
-LEVEL_SIEGE_CLOUDTOWER.puzzles = [
-    PuzzleSpec("cache", Vec3(-30, 30, 12.75), reward="health"),
-    PuzzleSpec("cache", Vec3(30, 30, 12.75), reward="magic"),
-    PuzzleSpec("tablet", Vec3(9, -26, 0.08), title="Griffin's Order",
-               text="Nailed to the dormitory door, in a hurry:\n\n"
-                    "  'Every witch to her room and the door held shut. "
-                    "Whatever is in the corridors is not a student and it is "
-                    "not alive. - G.'"),
-]
-LEVEL_BATTLE_ALFEA.objectives = [
-    obj_clear("Hold the courtyard, then finish the Trix"),
-    obj_secrets(),
-]
-LEVEL_BATTLE_ALFEA.puzzles = [
-    PuzzleSpec("cache", Vec3(-38, 8, 6.75), reward="health"),
-    PuzzleSpec("cache", Vec3(38, 8, 9.75), reward="magic"),
-    PuzzleSpec("cache", Vec3(0, -34, 12.75), reward="health"),
-]
-
-
-# --- Home realms: an inscription, three realm-lights and two caches --------
-# Positions are derived from each realm's own collectible and pickup spots,
-# which are already known to sit on solid ground.
-_HOME_LORE = {
-    "bloom": ("A Note on the Fridge",
-              "  'Bloom - gone to the shop, back by six. There is a casserole. "
-              "Do NOT let Kiko into the greenhouse again. Love, Mum.'\n\n"
-              "Sixteen years of a life that was never quite the whole story."),
-    "stella": ("The Ring's Inventory",
-               "Carved above the treasury door:\n\n"
-               "  'The Ring of Solaria answers to the blood of Solaria and to "
-               "nothing else. Whoever takes it will find they have stolen a "
-               "very heavy piece of jewellery and nothing more.'"),
-    "flora": ("The Grove's Own Record",
-              "Grown into the bark, letter by letter, over centuries:\n\n"
-              "  'What is planted here is not owned here. Take a seed, leave a "
-              "seed. Anyone who takes without leaving will be shown the way "
-              "out by the roots themselves.'"),
-    "musa": ("The Valley's First Score",
-             "Cut into the stage where the valley's first piece was played:\n\n"
-             "  'Melody is not the sound. Melody is the silence you put it "
-             "into. Guard both.'"),
-    "tecna": ("Realm Log, Entry 44,912",
-              "  'Anomaly logged: an unregistered mass crossed the perimeter "
-              "at 03:14 and was not detected by any of nine independent "
-              "systems. Probability of simultaneous failure: 1 in 4.1 billion. "
-              "Conclusion: this was not a failure.'"),
-    "aisha": ("The Tide Tables",
-              "Set into the causeway, worn almost smooth:\n\n"
-              "  'Andros keeps no walls. The sea is the wall. When the sea "
-              "stops answering, that is when you should be afraid.'"),
-}
-
-_REALM_LIGHT = {
-    "bloom": Vec4(1.00, 0.60, 0.30, 1), "stella": Vec4(1.00, 0.88, 0.40, 1),
-    "flora": Vec4(0.50, 0.92, 0.50, 1), "musa": Vec4(0.95, 0.45, 0.70, 1),
-    "tecna": Vec4(0.40, 0.95, 0.90, 1), "aisha": Vec4(0.40, 0.80, 1.00, 1),
-}
-
-for _key, (_calm, _siege) in HOME_LEVELS.items():
-    _title, _text = _HOME_LORE[_key]
-    _light = _REALM_LIGHT[_key]
-    _tab = Vec3(_calm.start.x + 6.0, _calm.start.y + 5.0, 0.08)
-    # Runes go beside the collectibles, caches where the health pickups are.
-    _runes = [Vec3(g.x + 3.0, g.y, g.z - 0.6) for g in _calm.gems[:3]]
-    _caches = [Vec3(h.x, h.y + 3.0, h.z - 0.6) for h in _calm.hearts[:2]]
-    _calm.puzzles = _explore_pack(
-        _tab, _title, _text, _caches[0], _caches[1],
-        rune_positions=[(r.x, r.y, r.z) for r in _runes],
-        group="realmlights", color=_light)
-    _calm.objectives = [
-        obj_flag("realmlights", "Wake the three realm lights"),
-        obj_clear("Drive them off your own doorstep"),
-        obj_collect(_calm.gem_goal, "Gather what was scattered"),
-        obj_secrets(),
-    ]
-    _siege.puzzles = [
-        PuzzleSpec("tablet", _tab, title=_title, text=_text),
-        PuzzleSpec("cache", _caches[0], reward="health"),
-        PuzzleSpec("cache", _caches[1], reward="magic"),
-    ]
-    _siege.objectives = [
-        obj_clear("Break the siege"),
-        obj_secrets(),
-    ]
-
-
-# ---------------------------------------------------------------------------
 # Placement snapping
 # ---------------------------------------------------------------------------
 # Collectibles and puzzle objects are authored at roughly the right spot and
 # then snapped onto the geometry that is actually there.  Hand-written Z
 # values drift the moment a builder changes, and an object floating out of
 # reach - or buried inside a pillar - is invisible in the level data.
-def _top_at(boxes, x, y, ceiling):
-    """Highest surface at (x, y) at or below ``ceiling``; 0 if none."""
-    best_z = 0.0
+def _top_at(boxes, x, y, ceiling, default=0.0):
+    """Highest surface at (x, y) at or below ``ceiling``; ``default`` if none.
+
+    "Found nothing" is tracked separately from the value, so a surface that
+    happens to sit below the default still wins over it.
+    """
+    best_z = None
     for c, h in boxes:
         if abs(x - c.x) <= h.x and abs(y - c.y) <= h.y:
             top = c.z + h.z
-            if top <= ceiling and top > best_z:
+            if top <= ceiling and (best_z is None or top > best_z):
                 best_z = top
-    return best_z
+    return default if best_z is None else best_z
 
 
 def _surface_under(boxes, x, y, want_z, search=9.0):
@@ -1939,8 +1186,9 @@ def _surface_under(boxes, x, y, want_z, search=9.0):
         px, py = best
         # Take the exposed surface there, not the box we happened to match:
         # on stacked terraces the nearest box is often the step below.
-        return (px, py, _top_at(boxes, px, py, want_z + 3.5))
-    return (x, y, _top_at(boxes, x, y, want_z + 1.5))
+        return (px, py, _top_at(boxes, px, py, want_z + 3.5, want_z))
+    # Nothing underneath at all: leave it where the course put it.
+    return (x, y, _top_at(boxes, x, y, want_z + 1.5, want_z))
 
 
 def _nudge_clear(boxes, x, y, z, radius=1.1):
@@ -1984,7 +1232,7 @@ def _snap_level(level: Level) -> None:
             if abs(nx - x) < 1e-6 and abs(ny - y) < 1e-6:
                 break
             x, y = nx, ny
-            z = _top_at(boxes, x, y, z + 2.0)
+            z = _top_at(boxes, x, y, z + 2.0, z)
         return Vec3(x, y, z + lift)
 
     # Pickups hover a little above their surface so they read as collectible.

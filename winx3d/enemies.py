@@ -17,9 +17,16 @@ from .geometry import MeshBuilder, shade
 _rng = random.Random(3)
 
 
+NO_GROUND = -1.0e9
+
+
 def ground_height(solids, x: float, y: float, from_z: float) -> float:
-    """Highest solid top under (x, y) at or below ``from_z``; else 0."""
-    best = 0.0
+    """Highest solid top under (x, y) at or below ``from_z``.
+
+    Returns ``NO_GROUND`` when nothing is underneath - the levels float over
+    open sky, so there is no floor at z=0 to fall back on.
+    """
+    best = NO_GROUND
     for center, half in solids:
         if (abs(x - center.x) <= half.x and abs(y - center.y) <= half.y):
             top = center.z + half.z
@@ -96,6 +103,12 @@ class Enemy:
         if z <= gz:
             z = gz
             self.vel.z = 0.0
+        elif z < -80.0:
+            # Knocked clean off the course: put it back where it started
+            # rather than let it fall forever.
+            self.root.setPos(self.home)
+            self.vel = Vec3(0, 0, 0)
+            return
         self.root.setZ(z)
 
     def take_damage(self, amount: float, effects) -> None:

@@ -63,6 +63,10 @@ class Player:
         self.cam_dir = Vec3(0, 1, 0)
         self.lock_target = None
         self.audio = None          # set by the game once it owns the player
+        # Where a fall puts you back. The game moves this forward as you
+        # pass the course's checkpoints.
+        self.respawn_point = Vec3(start)
+        self.fall_z = -25.0
         self.focus = NodePath("cam_focus")
         self.focus.reparentTo(parent)
         self.focus.setPos(start + Vec3(0, 0, 2.2))
@@ -80,9 +84,16 @@ class Player:
         return self.spec.power * (1.7 if self.transformed else 1.0)
 
     # -- collision ----------------------------------------------------------
+    NO_GROUND = -1.0e9
+
     def _support_height(self, x: float, y: float, from_z: float) -> float:
-        """Top of the highest solid under the player's circle, at/below head."""
-        best = 0.0
+        """Top of the highest solid under the player's circle, at/below head.
+
+        Returns ``NO_GROUND`` when there is nothing underfoot.  Defaulting to
+        zero would put an invisible floor at z=0 across the whole world, which
+        on a course floating over open sky means you never actually fall.
+        """
+        best = self.NO_GROUND
         r = self.radius
         for center, half in self.solids:
             if (abs(x - center.x) <= half.x + r and
@@ -238,10 +249,11 @@ class Player:
             else:
                 self.grounded = False
 
-        if pos.z < -30.0:                     # fell out of the world
+        if pos.z < self.fall_z:               # fell off the course
             self.take_damage(1.0, force=True)
-            pos = Vec3(0, 0, 6.0)
+            pos = Vec3(self.respawn_point) + Vec3(0, 0, 1.0)
             self.vel = Vec3(0, 0, 0)
+            self.grounded = False
 
         self.root.setPos(pos)
 

@@ -133,6 +133,8 @@ class Game(ShowBase):
         self.portal = None
         self.portal_active = False
         self.bosses = []
+        self.checkpoints = []
+        self.checkpoint_index = -1
         self.interactables = []
         self.groups = {}
         self.group_titles = {}
@@ -737,6 +739,12 @@ class Game(ShowBase):
         # The fairy's magic sounds like her element, on the way out and on
         # impact.
         self.player.audio = self.audio
+        self.player.respawn_point = Vec3(level.start)
+        self.player.fall_z = level.fall_z
+        # Checkpoints along a linear course: reaching one moves the place a
+        # fall puts you back to, so a mistake costs a little, not the level.
+        self.checkpoints = [Vec3(p) for p in level.checkpoints]
+        self.checkpoint_index = -1
         self.effects.hit_sound = (
             lambda: self.audio.play_variant("hit", self.spec.key, 0.45))
         self.player.score = keep_score
@@ -837,6 +845,8 @@ class Game(ShowBase):
             self.player.focus.removeNode()
             self.player = None
         self.bosses = []
+        self.checkpoints = []
+        self.checkpoint_index = -1
         self.render.clearFog()
 
     def end_run(self) -> None:
@@ -1059,6 +1069,7 @@ class Game(ShowBase):
                 self.enemy_list.append(
                     E.spawn(kind, self.world_root, pos, self.solids))
 
+        self._update_checkpoints(player)
         self._update_reticle()
         for it in self.interactables:
             it.update(dt, self)
@@ -1179,6 +1190,9 @@ class Game(ShowBase):
         if o.kind == "secrets":
             return (self.puzzle.secrets_total > 0 and
                     self.puzzle.secrets_found >= self.puzzle.secrets_total)
+        if o.kind == "chests":
+            return (self.puzzle.chests_total > 0 and
+                    self.puzzle.chests_opened >= self.puzzle.chests_total)
         return self.puzzle.has(o.target)
 
     def objective_progress(self, o) -> str:
@@ -1190,6 +1204,9 @@ class Game(ShowBase):
         if o.kind == "secrets":
             return "%d / %d" % (self.puzzle.secrets_found,
                                 self.puzzle.secrets_total)
+        if o.kind == "chests":
+            return "%d / %d" % (self.puzzle.chests_opened,
+                                self.puzzle.chests_total)
         if o.target in self.groups:
             members = [m for m in self.groups[o.target]
                        if not isinstance(m, puzzles.OPENERS)]
@@ -1197,6 +1214,31 @@ class Game(ShowBase):
             if len(members) > 1:
                 return "%d / %d" % (done, len(members))
         return ""
+
+    def _update_checkpoints(self, player) -> None:
+        """Claim the furthest checkpoint the player is standing near.
+
+        Scanning them all rather than only the next one means a shortcut, a
+        spring that overshoots, or simply moving fast cannot leave the
+        respawn point stranded behind you.
+        """
+        if not player.alive or not self.checkpoints:
+            return
+        here = player.root.getPos()
+        reached = self.checkpoint_index
+        for i in range(len(self.checkpoints) - 1, self.checkpoint_index, -1):
+            if (here - self.checkpoints[i]).length() < 11.0:
+                reached = i
+                break
+        if reached > self.checkpoint_index:
+            nxt = reached
+            self.checkpoint_index = nxt
+            player.respawn_point = Vec3(self.checkpoints[nxt])
+            if True:
+                self.audio.play("portal", 0.4)
+                self.hud.show_banner("", "Checkpoint", 1.4)
+                self.effects.ring(self.checkpoints[nxt] + Vec3(0, 0, 1.0),
+                                  Vec4(0.6, 0.95, 1.0, 1), 5.0, 16)
 
     def _update_reticle(self) -> None:
         """Put the crosshair where the shot will actually go.

@@ -104,40 +104,57 @@ Army of Decay, which they turn on the realms one at a time.
 ![Pixie Village](screenshots/21-pixie-village.png)
 ![The Battle of Alfea](screenshots/23-battle-of-alfea.png)
 
-## Exploring, and puzzles
+## Stage structure
 
-Chapters are not just fights. Every level carries an objective checklist, and
-the portal home stays shut until the required ones are done — so clearing the
-enemies is rarely enough on its own.
+Chapters are **linear courses**, not open arenas: a path that runs from a
+start pad to a goal, turning in ninety-degree corners, climbing stairs,
+crossing gaps on stepping platforms and opening out into arenas for the
+fights. Each one is roughly 180-200 units end to end. Off the path there is
+no floor at all - the whole stage floats over open sky, and falling is real.
 
-![Objectives and a rune](screenshots/24-puzzle-runes.png)
+![A course from above](screenshots/29-course-overview.png)
 
-**Inscriptions.** Scattered tablets carry the realm's lore and, usually, the
-hint you need for its puzzle. Press `E` to read one.
+**Checkpoints** are dropped as you go. A fall costs a little health and puts
+you back at the last one you passed, not at the start of the level.
+
+**Chests** sit along the route and pay out score, health, magic, a handful of
+crystals, or an extra life. Each has its own trim colour and a lid that swings
+open.
+
+![Chests along the route](screenshots/31-chest-closed.png)
+
+**Springs** throw you upward, for the routes that climb. **Crystals** are
+strung along the path in lines to follow. And **caches** are tucked away on
+ledges off the main line, for players who go looking.
+
+![The swamp course](screenshots/30-course-overview-swamp.png)
+
+## Puzzles
+
+Every level carries an objective checklist, and the portal home stays shut
+until the required ones are done - so reaching the end is rarely enough on its
+own.
+
+**Inscriptions.** Tablets beside the path carry the realm's lore and, usually,
+the hint for its puzzle. Press `E` to read one.
 
 ![Reading an inscription](screenshots/26-puzzle-reading.png)
-
-**Hidden caches.** Every level hides two or three, off the main route and
-worth score, health or a full magic meter. Finding them is always optional.
-
-**Puzzles**, one built around each level's own fiction:
 
 | Level | Puzzle |
 | ----- | ------ |
 | Alfea | Wake four barrier stones by striking each with a magic bolt |
-| Black Mud Swamp | Light the marsh lights out in the bog, then work two levers to extend a bridge to a stranded islet |
-| Cloud Tower | Sound four chimes in the order a page of the Book of Fate gives you — a wrong note resets the whole sequence, and the hall gate stays shut |
-| Lake Roccaluce | Wake the four lights that stood over Domino, scattered across ice shelves you have to fly to |
+| Black Mud Swamp | Light the marsh lights, then work two levers to extend a drawbridge across a channel with no other way over |
+| Cloud Tower | Sound four chimes in the order a page of the Book of Fate gives you - a wrong note resets the sequence, and the hall gate stays shut |
+| Lake Roccaluce | Wake the four lights that stood over Domino |
 | Red Fountain | The vault does not open to magic: push two counterweights onto the floor plates |
 | Pixie Village | Wake five chimes in the order of the pixies' rhyme |
-| Home realms | Three realm lights, an inscription of your own, and caches |
+| Home realms | Three realm lights, an inscription of your own, and a cache |
 
 ![The chime sequence](screenshots/27-puzzle-sequence.png)
-![The vault counterweights](screenshots/28-puzzle-blocks.png)
 
-Gates, bridges and pushable blocks are real obstacles, not scenery: each owns
-an entry in the level's collision list, which is the same list the player, the
-enemies and every projectile test against — so a gate that opens is genuinely
+Gates, drawbridges and pushable blocks are real obstacles, not scenery: each
+owns an entry in the level's collision list - the same list the player, the
+enemies and every projectile test against - so a gate that opens is genuinely
 open for all of them at once.
 
 ## The fairies, and their realms
@@ -262,6 +279,9 @@ Windows, then the software renderer, rather than failing to start.
   and cracks are scattered on top. Levels run about 16,000 triangles.
 - **One detail knob.** `--low` halves segment counts and doubles ground tile
   size across every generated mesh.
+- **Stages are built by walking a path**, laying axis-aligned slabs of floor
+  as it goes. Keeping every heading on a ninety-degree increment is what lets
+  the collision stay exact rather than approximating a rotated corridor.
 - **Static level geometry is flattened** into a handful of nodes at load.
 - **Analytic collision.** Movement, projectiles and pickups resolve against
   axis-aligned boxes directly rather than running Panda3D's collision
@@ -290,7 +310,8 @@ winx3d/
   geometry.py         Procedural mesh builder (boxes, spheres, cylinders, ...)
   lore.py             Canon: characters, realms, the Codex, the S1 script
   characters.py       The six fairies, their models and the animator
-  world.py            Level geometry, collision, realms, puzzles, campaign
+  course.py           Linear stage builder: runs, corners, gaps, arenas
+  world.py            Realm themes, landmarks, routes, the campaign
   puzzles.py          Interactables: runes, chimes, gates, blocks, tablets
   player.py           Movement, flight, combat, third-person camera
   enemies.py          Ghoul / Wisp / Troll / Decay / Knut / Trix AI
@@ -316,9 +337,11 @@ The whole game can be played through with no display attached, which is how it
 is tested:
 
 ```sh
-python3 tests/smoke.py      # 199 checks: lore integrity, all six campaigns
+python3 tests/smoke.py      # 215 checks: lore integrity, all six campaigns
                             # and every home realm, placement validation for
-                            # every pickup and puzzle object, each puzzle type
+                            # every pickup and puzzle object, stage structure
+                            # (checkpoints, chests, springs, falling), each
+                            # puzzle type
                             # end to end, menus, unlocks, the story system,
                             # movement, collision, flight, free-aim shooting,
                             # combat, death, portals, the Trix, per-realm

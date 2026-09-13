@@ -5,12 +5,13 @@ Uses Panda3D's software rasteriser so it runs on a machine with no GPU.
 """
 from __future__ import annotations
 
+import math
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from panda3d.core import ClockObject, Filename, loadPrcFileData
+from panda3d.core import ClockObject, Filename, Vec3, loadPrcFileData
 
 W, H = 960, 720
 loadPrcFileData("cap", "\n".join([
@@ -91,6 +92,23 @@ def main():
             shot("%02d-%s-%s" % (4 + i * 2 + (1 if tag == "siege" else 0),
                                  key, tag))
 
+    def overview(name, level_index, height=95.0, pitch=-55.0, back=70.0):
+        game.load_level(level_index)
+        play()
+        p = game.player
+        mid = game.checkpoints[len(game.checkpoints) // 2] \
+            if game.checkpoints else p.root.getPos()
+        p.root.setPos(mid.x, mid.y - back, mid.z + height)
+        p.cam_yaw, p.cam_pitch = 0.0, pitch
+        p.vel.z = 0.0
+        step(2)
+        game.player.update_camera(game.camera, 1.0)
+        step(2)
+        shot(name)
+
+    overview("29-course-overview", 1)
+    overview("30-course-overview-swamp", 2, height=80.0, back=60.0)
+
     # Puzzles and exploration.
     game.start_run(characters.BY_KEY["bloom"])
     play()
@@ -113,6 +131,24 @@ def main():
     shot("26-puzzle-reading")
     game.on_confirm()
     step(4)
+
+    # A chest beside the path.
+    game.load_level(1)
+    play()
+    chest = next(i for i in game.interactables
+                 if i.__class__.__name__ == "Chest")
+    p = game.player
+    cp = chest.center()
+    off = Vec3(-7.0, -7.0, 0.0)
+    p.root.setPos(cp.x + off.x, cp.y + off.y, cp.z - 1.0)
+    to = cp - p.center()
+    p.cam_yaw = math.degrees(math.atan2(-to.x, to.y))
+    p.cam_pitch = -14.0
+    step(25)
+    shot("31-chest-closed")
+    game.do_interact()
+    step(20)
+    shot("32-chest-open")
 
     game.load_level(3)                       # Cloud Tower: the chime sequence
     play()

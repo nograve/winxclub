@@ -16,7 +16,9 @@ import math
 
 from panda3d.core import NodePath, TransparencyAttrib, Vec3, Vec4
 
-from .geometry import MeshBuilder, shade
+from .geometry import MeshBuilder, seg as _seg_fn, shade
+
+_SEG = _seg_fn(12)
 
 RUNE_DIM = Vec4(0.30, 0.30, 0.38, 1)
 
@@ -29,6 +31,8 @@ class PuzzleState:
         self.counters: dict[str, int] = {}
         self.secrets_found = 0
         self.secrets_total = 0
+        self.chests_opened = 0
+        self.chests_total = 0
         self.tablets_read = 0
         self.tablets_total = 0
 
@@ -548,8 +552,150 @@ class Cache(Interactable):
             self.root.setH(self.root.getH() + 18.0 * dt)
 
 
+class Chest(Interactable):
+    """A chest beside the path. Opens with a hinged lid and pays out."""
+
+    prompt = "Open the chest"
+    use_radius = 4.2
+
+    REWARDS = {
+        "score":  (Vec4(0.95, 0.80, 0.35, 1), "500 points"),
+        "health": (Vec4(1.00, 0.42, 0.52, 1), "Health restored"),
+        "magic":  (Vec4(0.45, 0.85, 1.00, 1), "Magic restored"),
+        "life":   (Vec4(1.00, 0.70, 0.85, 1), "Extra life"),
+        "gems":   (Vec4(0.60, 0.95, 0.85, 1), "A handful of crystals"),
+    }
+
+    def build(self, game) -> None:
+        reward = self.spec.reward
+        trim, _ = self.REWARDS.get(reward, self.REWARDS["score"])
+        wood = Vec4(0.46, 0.30, 0.19, 1)
+        self.trim = trim
+
+        base = MeshBuilder()
+        base.box((0, 0, 0.62), (2.5, 1.7, 1.25), wood, shade(wood, 1.12))
+        for sx in (-1, 1):                                    # corner bands
+            base.box((sx * 1.15, 0, 0.62), (0.22, 1.78, 1.30), trim)
+        base.box((0, 0, 0.30), (2.58, 1.78, 0.20), trim)
+        for sx in (-1, 1):                                    # feet
+            for sy in (-1, 1):
+                base.box((sx * 1.0, sy * 0.65, 0.10), (0.32, 0.32, 0.22),
+                         shade(wood, 0.7))
+        base.build("chest_base").reparentTo(self.root)
+
+        lid = MeshBuilder()
+        # A barrel lid, hinged along its back edge.
+        lid.lathe((0, 0, 0), [(0.0, 0.0), (0.30, 0.62), (0.62, 0.80),
+                              (0.95, 0.62), (1.25, 0.0)],
+                  wood, segments=9, squash_y=1.0)
+        lid.box((0, 0, 0.62), (2.5, 0.30, 1.24), trim)
+        lid_np = lid.build("chest_lid")
+        lid_np.setR(90)
+        lid_np.setScale(1.0, 2.02, 1.0)
+        hinge = self.root.attachNewNode("hinge")
+        hinge.setPos(0, 0.85, 1.24)
+        lid_np.reparentTo(hinge)
+        lid_np.setPos(0, -0.85, 0)
+        self.hinge = hinge
+
+        glow = MeshBuilder()
+        glow.sphere((0, 0, 1.3), 1.7, Vec4(trim[0], trim[1], trim[2], 0.16),
+                    segments=9, rings=6)
+        g = glow.build("chest_glow")
+        g.setTransparency(TransparencyAttrib.MAlpha)
+        g.setDepthWrite(False)
+        g.setLightOff()
+        g.reparentTo(self.root)
+        self.glow = g
+        self.open_angle = 0.0
+        game.puzzle.chests_total += 1
+
+    def use(self, game) -> None:
+        self.solved = True
+        game.puzzle.chests_opened += 1
+        p = game.player
+        reward = self.spec.reward
+        _, label = self.REWARDS.get(reward, self.REWARDS["score"])
+        if reward == "health":
+            p.health = min(p.health + 3.0, game.max_health)
+        elif reward == "magic":
+            p.magic = game.max_magic
+        elif reward == "life":
+            p.lives += 1
+        elif reward == "gems":
+            p.gems += 3
+            p.score += 150
+        p.score += 500
+        game.effects.burst(self.center() + Vec3(0, 0, 1.4), self.trim,
+                           24, 8.0, 0.42)
+        game.effects.ring(self.center() + Vec3(0, 0, 0.6),
+                          shade(self.trim, 1.3), 4.0, 16)
+        game.audio.play("heart")
+        game.hud.show_banner("", label, 1.8)
+        self.glow.hide()
+        game.on_puzzle_progress(self.group)
+
+    def update(self, dt, game) -> None:
+        self.t += dt
+        if self.solved:
+            if self.open_angle < 105.0:
+                self.open_angle = min(105.0, self.open_angle + dt * 260.0)
+                self.hinge.setP(-self.open_angle)
+        else:
+            self.glow.setScale(1.0 + math.sin(self.t * 2.4) * 0.12)
+            self.root.setZ(self.pos.z + math.sin(self.t * 1.6) * 0.04)
+
+
+class Spring(Interactable):
+    """A pad that throws the player upward when she lands on it."""
+
+    use_radius = 0.0          # never hand-used; it fires on contact
+
+    def build(self, game) -> None:
+        self.power = float(self.spec.power or 26.0)
+        body = MeshBuilder()
+        body.lathe((0, 0, 0), [(0.0, 2.0), (0.30, 1.85), (0.45, 1.70)],
+                   Vec4(0.86, 0.82, 0.30, 1), segments=_SEG)
+        body.build("spring_base").reparentTo(self.root)
+        top = MeshBuilder()
+        top.lathe((0, 0, 0), [(0.0, 1.70), (0.34, 1.80), (0.52, 1.55)],
+                  Vec4(0.95, 0.28, 0.34, 1), segments=_SEG)
+        for i in range(_SEG):
+            a = math.tau * i / _SEG
+            top.sphere((math.cos(a) * 1.35, math.sin(a) * 1.35, 0.58), 0.16,
+                       Vec4(1.0, 0.92, 0.45, 1), segments=6, rings=4)
+        t = top.build("spring_top")
+        t.setZ(0.45)
+        t.reparentTo(self.root)
+        self.top = t
+        self.cooldown = 0.0
+
+    def can_use(self, game) -> bool:
+        return False
+
+    def update(self, dt, game) -> None:
+        self.t += dt
+        self.cooldown = max(0.0, self.cooldown - dt)
+        squash = 1.0 - max(0.0, self.cooldown - 0.25) * 1.6
+        self.top.setSz(max(0.25, squash))
+        p = game.player
+        if p is None or not p.alive or self.cooldown > 0.0:
+            return
+        d = p.root.getPos() - self.root.getPos()
+        if abs(d.x) < 2.4 and abs(d.y) < 2.4 and -0.5 < d.z < 3.0 \
+                and p.vel.z <= 0.5:
+            p.vel.z = self.power
+            p.grounded = False
+            self.cooldown = 0.55
+            game.audio.play("jump")
+            game.effects.burst(self.center(), Vec4(1.0, 0.85, 0.35, 1),
+                               14, 7.0, 0.34, gravity=-6.0)
+
+
 KINDS = {
     "tablet": Tablet,
+    "chest": Chest,
+    "spring": Spring,
     "rune": Rune,
     "pedestal": Pedestal,
     "gate": Gate,

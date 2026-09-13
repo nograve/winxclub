@@ -394,18 +394,28 @@ def main():
     moved = math.hypot(p.root.getX() - x0, p.root.getY() - y0)
     check("running moves the player", moved > 3.0, "moved %.2f" % moved)
 
-    # Walk hard into the bandstand plinth; pushout must keep us outside it.
-    p.root.setPos(0, -14.0, 1.2)
+    # Walk hard into a wall and confirm the pushout keeps us outside it.
+    # Pick a real solid from the level rather than assuming a landmark.
+    tall = [(c, h) for c, h in g.solids
+            if h.z > 1.0 and h.x > 2.0 and h.y > 2.0 and c.z > -5.0]
+    wall_c, wall_h = max(tall, key=lambda ch: ch[1].z)
+    approach = Vec3(wall_c.x, wall_c.y - wall_h.y - 6.0,
+                    wall_c.z + wall_h.z + 0.2)
+    p.root.setPos(approach)
     p.vel = Vec3(0, 0, 0)
-    h.step(90, keys={"forward": True, "run": True})
+    p.cam_yaw = 0.0
+    h.step(110, keys={"forward": True, "run": True})
     h.step(1, keys={"forward": False, "run": False})
-    inside = (abs(p.root.getX()) < 7.5 and abs(p.root.getY()) < 7.5
-              and p.root.getZ() < 0.8)
-    check("cannot walk inside a solid", not inside, "%s" % p.root.getPos())
+    q = p.root.getPos()
+    inside = (abs(q.x - wall_c.x) < wall_h.x - 0.2 and
+              abs(q.y - wall_c.y) < wall_h.y - 0.2 and
+              wall_c.z - wall_h.z + 0.2 < q.z < wall_c.z + wall_h.z - 0.2)
+    check("cannot walk inside a solid", not inside, "%s" % q)
 
-    p.root.setPos(0, -40, 2.0)
+    p.root.setPos(Vec3(g.level.start) + Vec3(0, 0, 1.0))
     p.vel = Vec3(0, 0, 0)
     p.magic = C.MAX_MAGIC
+    h.step(6)
     g.keys["jump_pressed"] = True
     h.step(70, keys={"jump": True})
     check("holding jump gains height", p.root.getZ() > 5.0,
@@ -420,8 +430,9 @@ def main():
         if e.alive:
             e.root.setPos(e.root.getPos() + Vec3(0, 160, 0))
     target = next(e for e in g.enemy_list if e.name == "ghoul")
-    target.root.setPos(-52, -52, 1.0)
-    p.root.setPos(-52, -64, 1.0)
+    base = Vec3(g.level.start)
+    target.root.setPos(base.x, base.y + 12.0, base.z)
+    p.root.setPos(base.x, base.y, base.z)
     p.vel = Vec3(0, 0, 0)
     p.magic = C.MAX_MAGIC
     p.invuln = 0.0
@@ -439,7 +450,9 @@ def main():
           "%.1f -> %.1f" % (hp_before, target.health))
 
     p.magic = C.MAX_MAGIC
-    near = [e for e in g.enemy_list if e.name == "ghoul" and e.alive][1]
+    others = [e for e in g.enemy_list if e.name == "ghoul" and e.alive
+              and e is not target]
+    near = others[0]
     near.root.setPos(p.root.getPos() + Vec3(2.0, 0, 0))
     h.step(1)
     hp2 = near.health
@@ -453,7 +466,7 @@ def main():
     for e in g.enemy_list:
         if e.alive:
             e.root.setPos(e.root.getPos() + Vec3(0, 400, 0))
-    p.root.setPos(0, -40, 0)
+    p.root.setPos(Vec3(g.level.start) + Vec3(0, 0, 1.0))
     p.vel = Vec3(0, 0, 0)
     p.cam_yaw, p.cam_pitch = 0.0, C.CAM_PITCH
     p.magic = C.MAX_MAGIC
@@ -575,6 +588,11 @@ def main():
     rune = next(it for it in g.interactables
                 if it.__class__.__name__ == "Rune")
     check("runes can be shot", rune.shootable)
+    # Lock-on takes enemies over scenery, which is right in play but would
+    # steal this shot - clear the line first.
+    for e in g.enemy_list:
+        if e.alive:
+            e.root.setPos(e.root.getPos() + Vec3(0, 500, 0))
     p.magic = C.MAX_MAGIC
     p.invuln = 0.0
     p.root.setPos(rune.center() + Vec3(0, -11.0, -1.0))
@@ -590,15 +608,17 @@ def main():
     check("a magic bolt lights a rune", rune.solved)
 
     caches = [it for it in g.interactables
-              if it.__class__.__name__ == "Cache"]
-    check("the level hides caches", len(caches) >= 2)
+              if it.__class__.__name__ in ("Cache", "Chest")]
+    check("the level has chests and caches", len(caches) >= 4,
+          "%d" % len(caches))
     before = p.score
     p.root.setPos(caches[0].center() + Vec3(0, -2.0, -1.0))
     h.step(2)
     g.do_interact()
     check("a cache can be opened", caches[0].solved)
     check("finding one is rewarded", p.score > before)
-    check("secrets are counted", g.puzzle.secrets_found == 1)
+    check("opening one is counted",
+          g.puzzle.secrets_found + g.puzzle.chests_opened == 1)
 
     flags = [o for o in g.level.objectives if o.kind == "flag"]
     check("chapter 1 has a puzzle objective", len(flags) >= 1)
@@ -625,6 +645,68 @@ def main():
     h.skip_story()
     check("results follow the outro", g.state == "results")
     check("progress was recorded", g.profile["levels_cleared"] >= 1)
+
+    print("\n[9a] Linear stage structure")
+    from winx3d import puzzles as _P
+    short = [lv.key for lv in all_levels if lv.course_length < 150]
+    check("every chapter is a full-length course", not short, str(short[:4]))
+    few = [lv.key for lv in all_levels if len(lv.checkpoints) < 3]
+    check("every course drops checkpoints", not few, str(few[:4]))
+    nochest = [lv.key for lv in all_levels
+               if not any(s.kind == "chest" for s in lv.puzzles)]
+    check("every course has chests", not nochest, str(nochest[:4]))
+    nospring = [lv.key for lv in all_levels
+                if not any(s.kind == "spring" for s in lv.puzzles)]
+    check("every course has a spring", not nospring, str(nospring[:4]))
+    check("the goal is far from the start",
+          all((lv.portal - lv.start).length() > 80.0 for lv in all_levels))
+
+    g.load_level(0)
+    h.skip_story()
+    h.step(3)
+    p = g.player
+    check("the run starts at the first checkpoint",
+          (p.respawn_point - Vec3(g.level.start)).length() < 12.0)
+
+    # Reaching a checkpoint moves where a fall puts you back.
+    before = Vec3(p.respawn_point)
+    p.root.setPos(g.checkpoints[1])
+    h.step(3)
+    check("passing a checkpoint claims it", g.checkpoint_index >= 1)
+    check("it moves the respawn point",
+          (p.respawn_point - before).length() > 5.0)
+
+    # Falling off the course costs health and returns you to it.
+    hp = p.health
+    p.invuln = 0.0
+    p.root.setPos(Vec3(g.checkpoints[1]) + Vec3(0, 0, -60.0))
+    h.step(4)
+    check("falling off costs health", p.health < hp)
+    check("falling returns you to the checkpoint",
+          (p.root.getPos() - g.checkpoints[1]).length() < 6.0,
+          "%s" % p.root.getPos())
+
+    # Chests pay out and their lid opens.
+    chest = next(i for i in g.interactables if isinstance(i, _P.Chest))
+    p.health = 2.0
+    p.root.setPos(chest.center() + Vec3(0, -2.0, -1.0))
+    h.step(2)
+    score_before = p.score
+    g.do_interact()
+    h.step(30)
+    check("a chest can be opened", chest.solved)
+    check("it pays out", p.score > score_before)
+    check("its lid swings open", chest.hinge.getP() < -30.0,
+          "%.0f" % chest.hinge.getP())
+    check("chests are counted", g.puzzle.chests_opened >= 1)
+
+    # A spring throws the player upward.
+    spring = next(i for i in g.interactables if isinstance(i, _P.Spring))
+    p.root.setPos(spring.root.getPos() + Vec3(0, 0, 0.6))
+    p.vel = Vec3(0, 0, 0)
+    h.step(3)
+    check("a spring launches the player", p.vel.z > 15.0,
+          "vz=%.1f" % p.vel.z)
 
     print("\n[9b] The harder puzzle types")
     from winx3d import puzzles as P
@@ -661,18 +743,33 @@ def main():
     plates = [it for it in g.interactables if isinstance(it, P.Plate)]
     check("Red Fountain has counterweights and plates",
           len(blocks) == 2 and len(plates) == 2)
-    blk, plate = blocks[0], plates[0]
-    start_y = blk.root.getY()
+    # A block that starts flush against a rail can never be pushed at all.
+    jammed = [b for b in blocks
+              if g.solid_at(b.root.getPos() + Vec3(0, 0, b.half.z), b.half,
+                            ignore=b.box_index)]
+    check("no counterweight starts jammed against scenery", not jammed,
+          "%d jammed" % len(jammed))
+    # Pair each block with its nearest plate, and push along that line -
+    # the course can be running along any axis at that point.
+    blk = blocks[0]
+    plate = min(plates, key=lambda q: (q.root.getPos() -
+                                       blk.root.getPos()).length())
+    to_plate = plate.root.getPos() - blk.root.getPos()
+    to_plate.z = 0.0
+    to_plate.normalize()
     p = g.player
-    p.root.setPos(blk.root.getX(), blk.root.getY() - 4.2, blk.root.getZ())
+    start_pos = Vec3(blk.root.getPos())
+    p.root.setPos(blk.root.getPos() - to_plate * 4.6 + Vec3(0, 0, 0.2))
     p.vel = Vec3(0, 0, 0)
-    p.cam_yaw = 0.0
-    h.step(90, keys={"forward": True})
-    h.step(1, keys={"forward": False})
-    check("walking into a block pushes it", blk.root.getY() > start_y + 1.0,
-          "%.1f -> %.1f" % (start_y, blk.root.getY()))
+    p.cam_yaw = math.degrees(math.atan2(-to_plate.x, to_plate.y))
+    h.step(110, keys={"forward": True, "run": True})
+    h.step(1, keys={"forward": False, "run": False})
+    moved = (blk.root.getPos() - start_pos).length()
+    check("walking into a block pushes it", moved > 1.0,
+          "moved %.2f" % moved)
     check("the block's collision moves with it",
-          abs(g.solids[blk.box_index][0].y - blk.root.getY()) < 0.1)
+          (Vec3(g.solids[blk.box_index][0].x, g.solids[blk.box_index][0].y, 0)
+           - Vec3(blk.root.getX(), blk.root.getY(), 0)).length() < 0.1)
     # Drop it straight onto the plate and confirm the plate responds.
     blk.root.setPos(plate.root.getX(), plate.root.getY(), plate.root.getZ())
     g.move_solid(blk.box_index, blk.root.getPos() + Vec3(0, 0, blk.half.z))
